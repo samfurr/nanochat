@@ -20,7 +20,7 @@ readonly TARGET_TRAINING_SECONDS=5940
 readonly GATE_STEPS=250
 readonly GATE_EVAL_EVERY=125
 readonly GATE_EVAL_TOKENS=4194304
-readonly FULL_EVAL_EVERY=500
+readonly FULL_EVAL_EVERY=-1
 readonly FULL_EVAL_TOKENS=41943040
 readonly SEED=1337
 readonly DATASET_TRAIN_SHARDS=170
@@ -155,7 +155,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
     print_command env NANOCHAT_DTYPE=bfloat16 "${TRAIN_COMMAND[@]}"
     echo "The passing gate derives the final iteration count from measured training time."
     build_train_command statehead-d32-fp8-99m CALIBRATED_STEPS \
-        "$FULL_EVAL_EVERY" "$FULL_EVAL_TOKENS" 1000
+        "$FULL_EVAL_EVERY" "$FULL_EVAL_TOKENS" -1
     echo "Calibrated full run:"
     print_command env NANOCHAT_DTYPE=bfloat16 "${TRAIN_COMMAND[@]}"
     echo "Final evaluation uses scripts.base_eval at the calibrated final step."
@@ -315,7 +315,7 @@ printf -v FINAL_STEP_PADDED "%06d" "$TRAINING_STEPS"
 FULL_TAG="statehead-d32-fp8-99m"
 FULL_CHECKPOINT_DIR="$NANOCHAT_BASE_DIR/base_checkpoints/$FULL_TAG"
 [[ ! -e "$FULL_CHECKPOINT_DIR" ]] || fail "full checkpoint directory already exists: $FULL_CHECKPOINT_DIR"
-build_train_command "$FULL_TAG" "$TRAINING_STEPS" "$FULL_EVAL_EVERY" "$FULL_EVAL_TOKENS" 1000
+build_train_command "$FULL_TAG" "$TRAINING_STEPS" "$FULL_EVAL_EVERY" "$FULL_EVAL_TOKENS" -1
 echo "Starting calibrated full run for $TRAINING_STEPS steps."
 print_command env NANOCHAT_DTYPE=bfloat16 "${TRAIN_COMMAND[@]}"
 FULL_START_SECONDS=$SECONDS

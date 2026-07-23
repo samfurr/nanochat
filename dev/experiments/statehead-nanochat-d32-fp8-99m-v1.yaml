@@ -42,10 +42,17 @@ training:
   warmup_steps: 40
   warmdown_ratio: 0.65
   final_lr_fraction: 0.05
-  validation_every_steps: 500
+  validation_schedule: final_only_in_separate_base_eval
   validation_tokens: 41943040
-  checkpoint_every_steps: 1000
+  checkpoint_schedule: final_only
   checkpoint_selection: predetermined_calibrated_final_step
+evaluation:
+  command: scripts.base_eval
+  suites:
+    - core
+    - bpb
+  full_core_max_per_task: -1
+  reserved_wall_minutes: 99
 data:
   dataset: karpathy/climbmix-400b-shuffle
   train_shards: shard_00000.parquet_through_shard_00169.parquet
@@ -74,14 +81,19 @@ infrastructure:
   container_image: vastai/pytorch:@vastai-automatic-tag
   local_disk_gb: 150
   total_hour_usd: 16.041666666666668
-  maximum_creation_to_destruction_minutes: 180
-  maximum_infrastructure_charge_usd: 50.00
+  maximum_restart_to_destruction_minutes: 240
+  maximum_total_experiment_charge_usd: 70.00
   termination_guard: required
   delete_after_artifact_retrieval: true
 approval:
   user_approved: true
   approved_utc: 2026-07-23
-  approved_ceiling_usd: 50.00
+  approved_ceiling_usd: 70.00
+  expanded_for_full_evaluation_utc: 2026-07-23
+next_if_unsuccessful:
+  architecture: statehead
+  depth: 24
+  purpose: same_depth_and_width_followup_to_gpt_winner
 claims:
   learning_parity: not_yet_demonstrated
   gpt2_core_parity: not_yet_demonstrated
