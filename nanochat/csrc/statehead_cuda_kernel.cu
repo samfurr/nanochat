@@ -25,16 +25,16 @@ __global__ void statehead_activate_gates_kernel(
     const scalar_t* __restrict__ gates,
     const scalar_t* __restrict__ gate_bias,
     scalar_t* __restrict__ activated_gates,
-    int64_t sequence_len,
+    int64_t total_gate_states,
     int64_t gate_stride) {
-  const int64_t state =
+  const int64_t item =
       static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (state >= gate_stride) {
+  if (item >= total_gate_states) {
     return;
   }
 
-  const int64_t token =
-      static_cast<int64_t>(blockIdx.z) * sequence_len + blockIdx.y;
+  const int64_t token = item / gate_stride;
+  const int64_t state = item - token * gate_stride;
   const int64_t gate_base = token * 4 * gate_stride + state;
   activated_gates[gate_base] = static_cast<scalar_t>(
       sigmoidf(
@@ -82,13 +82,15 @@ __global__ void statehead_chunk_summary_kernel(
     int64_t head_dim,
     int64_t chunk_size,
     int64_t n_chunks) {
-  const int64_t state_index =
+  const int64_t item =
       static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (state_index >= total_states) {
+  const int64_t total_items = total_states * n_chunks;
+  if (item >= total_items) {
     return;
   }
 
-  const int64_t chunk = blockIdx.y;
+  const int64_t state_index = item % total_states;
+  const int64_t chunk = item / total_states;
   const int64_t dim = state_index % head_dim;
   const int64_t head = (state_index / head_dim) % n_head;
   const int64_t batch = state_index / (n_head * head_dim);
@@ -156,13 +158,15 @@ __global__ void statehead_output_kernel(
     int64_t head_dim,
     int64_t chunk_size,
     int64_t n_chunks) {
-  const int64_t state_index =
+  const int64_t item =
       static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  if (state_index >= total_states) {
+  const int64_t total_items = total_states * n_chunks;
+  if (item >= total_items) {
     return;
   }
 
-  const int64_t chunk = blockIdx.y;
+  const int64_t state_index = item % total_states;
+  const int64_t chunk = item / total_states;
   const int64_t dim = state_index % head_dim;
   const int64_t head = (state_index / head_dim) % n_head;
   const int64_t batch = state_index / (n_head * head_dim);
@@ -408,23 +412,15 @@ std::vector<torch::Tensor> statehead_forward_cuda(
   auto chunk_u = torch::empty_like(chunk_a);
   auto chunk_initials = torch::empty_like(chunk_a);
 
+  const int64_t summary_items = total_states * n_chunks;
   const int summary_blocks =
-      static_cast<int>((total_states + kForwardThreads - 1) / kForwardThreads);
-  const dim3 summary_grid(
-      static_cast<unsigned int>(summary_blocks),
-      static_cast<unsigned int>(n_chunks));
+      static_cast<int>((summary_items + kForwardThreads - 1) / kForwardThreads);
   const int state_blocks =
       static_cast<int>((total_states + kForwardThreads - 1) / kForwardThreads);
-  const int64_t gate_stride = n_head * head_dim;
+  const int64_t total_gate_states = batch * sequence_len * n_head * head_dim;
   const int gate_blocks = static_cast<int>(
-      (gate_stride + kForwardThreads - 1) / kForwardThreads);
-  TORCH_CHECK(
-      sequence_len <= 65535 && batch <= 65535 && n_chunks <= 65535,
-      "native CUDA scan grid dimensions exceed CUDA launch limits");
-  const dim3 gate_grid(
-      static_cast<unsigned int>(gate_blocks),
-      static_cast<unsigned int>(sequence_len),
-      static_cast<unsigned int>(batch));
+      (total_gate_states + kForwardThreads - 1) / kForwardThreads);
+  const int64_t gate_stride = n_head * head_dim;
   const cudaStream_t stream = c10::cuda::getCurrentCUDAStream().stream();
 
   AT_DISPATCH_FLOATING_TYPES_AND2(
@@ -434,16 +430,16 @@ std::vector<torch::Tensor> statehead_forward_cuda(
       "statehead_forward_cuda",
       [&] {
         statehead_activate_gates_kernel<scalar_t>
-            <<<gate_grid, kForwardThreads, 0, stream>>>(
+            <<<gate_blocks, kForwardThreads, 0, stream>>>(
                 gates.data_ptr<scalar_t>(),
                 gate_bias.data_ptr<scalar_t>(),
                 activated_gates.data_ptr<scalar_t>(),
-                sequence_len,
+                total_gate_states,
                 gate_stride);
         C10_CUDA_KERNEL_LAUNCH_CHECK();
 
         statehead_chunk_summary_kernel<scalar_t>
-            <<<summary_grid, kForwardThreads, 0, stream>>>(
+            <<<summary_blocks, kForwardThreads, 0, stream>>>(
                 activated_gates.data_ptr<scalar_t>(),
                 chunk_a.data_ptr<float>(),
                 chunk_u.data_ptr<float>(),
@@ -469,7 +465,7 @@ std::vector<torch::Tensor> statehead_forward_cuda(
         C10_CUDA_KERNEL_LAUNCH_CHECK();
 
         statehead_output_kernel<scalar_t>
-            <<<summary_grid, kForwardThreads, 0, stream>>>(
+            <<<summary_blocks, kForwardThreads, 0, stream>>>(
                 activated_gates.data_ptr<scalar_t>(),
                 chunk_initials.data_ptr<float>(),
                 output.data_ptr<scalar_t>(),
