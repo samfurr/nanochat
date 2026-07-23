@@ -1,0 +1,177 @@
+{
+  "probe": "cuda_full_step_comparison",
+  "scientific_result": false,
+  "architecture": "statehead",
+  "repo_commit": "8e02099f6ac04b6d001dbabecc7d20b42a1b9d0e",
+  "torch_version": "2.9.1+cu128",
+  "cuda_version": "12.8",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "world_size": 1,
+  "compiled": true,
+  "seed": 1337,
+  "precision": "torch.bfloat16",
+  "fp8": false,
+  "fp8_linear_count": 0,
+  "gradient_finiteness_checked": false,
+  "config": {
+    "arch": "statehead",
+    "device_batch_size": 32,
+    "steps": 12,
+    "warmup_steps": 5,
+    "seed": 1337,
+    "sequence_length": 2048,
+    "layers": 12,
+    "model_width": 768,
+    "heads": 6,
+    "vocab_size": 32768,
+    "scan_chunk_size": 32,
+    "scan_backend": "cuda",
+    "projection_tile_rows": 16384,
+    "fp8": false,
+    "eager": false,
+    "verify_gradients": false,
+    "nsys_capture": false,
+    "output": "/root/statehead-cuda-v10-fast-activation-k32-probe.json"
+  },
+  "parameter_counts": {
+    "wte": 25165824,
+    "lm_head": 25165824,
+    "statehead_matrices": 35389440,
+    "statehead_vectors": 46080,
+    "transformer_matrices": 35389440,
+    "scalars": 50,
+    "total": 85767218
+  },
+  "scaling_params": 60555264,
+  "flops_per_token": 363414672,
+  "state_bytes_per_rank": 589824,
+  "optimizer_groups": [
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 25165824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 25165824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 24,
+      "parameters": 46080
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 12
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 12
+    },
+    {
+      "kind": "adamw",
+      "tensors": 3,
+      "parameters": 26
+    },
+    {
+      "kind": "muon",
+      "tensors": 12,
+      "parameters": 7077888
+    },
+    {
+      "kind": "muon",
+      "tensors": 12,
+      "parameters": 28311552
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "loss_rank0": 10.397625923156738,
+      "seconds_max_rank": 4.79009654559195,
+      "global_tokens_per_second": 13681.561399907274
+    },
+    {
+      "step": 1,
+      "loss_rank0": 7.433441162109375,
+      "seconds_max_rank": 0.06865303963422775,
+      "global_tokens_per_second": 954597.2086475
+    },
+    {
+      "step": 2,
+      "loss_rank0": 3.9556779861450195,
+      "seconds_max_rank": 0.06963611114770174,
+      "global_tokens_per_second": 941120.9058040993
+    },
+    {
+      "step": 3,
+      "loss_rank0": 1.6964187622070312,
+      "seconds_max_rank": 0.07013710308820009,
+      "global_tokens_per_second": 934398.444110045
+    },
+    {
+      "step": 4,
+      "loss_rank0": 1.1091804504394531,
+      "seconds_max_rank": 0.06961832847446203,
+      "global_tokens_per_second": 941361.2971767981
+    },
+    {
+      "step": 5,
+      "loss_rank0": 1.0417211055755615,
+      "seconds_max_rank": 0.07003720942884684,
+      "global_tokens_per_second": 935731.171108127
+    },
+    {
+      "step": 6,
+      "loss_rank0": 8.783063888549805,
+      "seconds_max_rank": 0.06971202045679092,
+      "global_tokens_per_second": 940096.1207345967
+    },
+    {
+      "step": 7,
+      "loss_rank0": 0.9391993880271912,
+      "seconds_max_rank": 0.06955924816429615,
+      "global_tokens_per_second": 942160.8445969197
+    },
+    {
+      "step": 8,
+      "loss_rank0": 0.9438664317131042,
+      "seconds_max_rank": 0.07028006948530674,
+      "global_tokens_per_second": 932497.6551666817
+    },
+    {
+      "step": 9,
+      "loss_rank0": 0.9285529851913452,
+      "seconds_max_rank": 0.06975933630019426,
+      "global_tokens_per_second": 939458.4793350091
+    },
+    {
+      "step": 10,
+      "loss_rank0": 0.9013290405273438,
+      "seconds_max_rank": 0.06931019946932793,
+      "global_tokens_per_second": 945546.2616148128
+    },
+    {
+      "step": 11,
+      "loss_rank0": 0.8526302576065063,
+      "seconds_max_rank": 0.06963983736932278,
+      "global_tokens_per_second": 941070.549209373
+    }
+  ],
+  "steady_state": {
+    "excluded_warmup_steps": 5,
+    "measured_steps": 7,
+    "seconds_median_max_rank": 0.06971202045679092,
+    "seconds_mean_max_rank": 0.06975684581058365,
+    "global_tokens_per_second_median": 940096.1207345967,
+    "global_tokens_per_second_mean": 939508.7259665029,
+    "loss_first_rank0": 1.0417211055755615,
+    "loss_last_rank0": 0.8526302576065063
+  },
+  "peak_allocated_bytes_max_rank": 14117856256,
+  "peak_reserved_bytes_max_rank": 18131976192,
+  "parameter_checksum_spread": 0.0
+}

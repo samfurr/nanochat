@@ -1,0 +1,15 @@
+c2af1ed6765b315c4156a50b4902d4f50c68a221459b6b0c09a05e85994ec889  dev/results/statehead-cuda-v7-v10-optimization-20260723/REPORT.md
+681773a4165327ba4a2b22a7c3d9bc5a85f6391b3f58d6e12ebbf587f6391b4e  dev/results/statehead-cuda-v7-v10-optimization-20260723/environment.txt
+f363d48aef8c85d35785c590f2fa89c152d41d8f2ab833450857a28567e420ba  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v10-fast-activation-k32-probe.json
+adc71583d3cb0b5e57d41d9a796cd615df29d51adf0228b2ec0081d68f71509b  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v10b-direct-fast-tanh-k32-formal.json
+e80bb4a24dc4260a9cd78cbb643607f92fbb6980aae66eed9e253ceb160af95d  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v10b-direct-fast-tanh-k32-probe.json
+57182788d56b79354e55f7e7e4c503bd477e5c5dab55bd45e8d7afe52e6d8d66  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v4-control-v7host-formal.json
+9e9860568649dd9ea07267055948850bc00ec97ea40bbe298cc3398d2e1bc7dc  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v4-control-v7host-probe.json
+4d232cc5a95cc0fa2e07a49ba0f4a65810ba30e1f6c4da30ef52a1b93929fb7e  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v4-final-v7pass-gradient-stability.json
+b410e5122bc9a1bf3bb07118fc1f06bcb9e34a422f6b21343355d021addccd57  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v7-projected-k32-tile16384-probe.json
+cdac46b579cf08fc2acf7188bcdd49a0ae8e3d305d2b5ec35578a7b0bd642733  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v7-projected-k32-tile32768-probe.json
+f50c71709d93e7b2702184e8c06b85dfa35b211378b0c24bffc615c3cf8c5579  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v8-gate-parallel-k32-probe.json
+7148e386144da1f3eccf49856b5d260c1caf4b2e9aac336ff93f005a938c68f8  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-cuda-v9-two-groups-k32-probe.json
+48686d0cd8ec1bd15ea90b119fa5a3084210d4e4afabe21a4ec74c32c147e517  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-v7-projected-tile32768-profile-run.json
+ed9fe082d139e31c9ed401e03130333538324b4ec8463f6cb1a54d677839c8a2  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-v7-projected-tile32768-kernels.csv
+420471a9bdd3b23cec5fe9ca75e5430deab15fbf7af2dc656eac9d069f31cd14  dev/results/statehead-cuda-v7-v10-optimization-20260723/statehead-v7-projected-tile32768-profile.nsys-rep
