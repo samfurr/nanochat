@@ -1,5 +1,5 @@
 experiment_id: statehead-nanochat-cuda-8gpu-preflight-v1
-status: awaiting_paid_run_approval
+status: complete
 purpose: distributed_optimizer_and_nccl_feasibility_only
 scientific_result: false
 repo_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
@@ -49,3 +49,19 @@ success_criteria:
   - finite_loss_and_gradients_all_ranks
   - cross_rank_parameter_checksum_spread_zero
 checkpoint_selection: none
+result:
+  artifact: dev/results/statehead-nanochat-cuda-8gpu-preflight-v1.json
+  process_exit_zero: true
+  all_eight_ranks_completed: true
+  finite_loss_and_gradients_all_ranks: true
+  optimizer_steps_completed: 2
+  first_step_including_compile_seconds_max_rank: 65.17646897956729
+  steady_step_seconds_max_rank: 0.12632401660084724
+  steady_global_tokens_per_second: 4150343.0155852376
+  peak_allocated_bytes_max_rank: 43207041024
+  peak_reserved_bytes_max_rank: 47355789312
+  parameter_checksum_spread: 0.0
+  json_sha256: 43f6c4b9fb769125c77d85b6c3e3cf86434df0257f00f60975fd11c9ab153a00
+  raw_log_sha256: fba0b084577932b9ff3fb220b7882fe38a678cf38cfa8f5680ded94910e6d74d
+  observed_balance_delta_usd: 0.8828623333
+  pod_deleted: true

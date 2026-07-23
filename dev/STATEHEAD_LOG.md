@@ -553,15 +553,137 @@ NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
 git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git status --short
 ```
 
-### Next gated probe
+## 2026-07-22 — eight-H100 DDP/NCCL preflight
+
+The explicitly approved distributed preflight ran on one Secure Cloud node with
+eight `NVIDIA H100 80GB HBM3` GPUs at `$23.92/hour`. It had a hard 15-minute
+termination deadline. Both synthetic optimizer steps completed on all eight
+ranks; the result and raw log were retrieved and validated before the pod was
+manually deleted. RunPod then reported no remaining pods and `$0/hour`. The
+immediately observed account-balance delta was `$0.8828623333`, below the
+approved `$5.98` ceiling; later billing adjustments may change that value.
+
+Environment:
+
+```text
+model code commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+checked-out branch head: ad9aab2f4f9bbbd100aad6e384243b4a16a085d2
+image: runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404
+RunPod pod: v1n834ijpcebmu (deleted)
+cloud/location: Secure Cloud / CA
+GPU: 8 × NVIDIA H100 80GB HBM3, 81,559 MiB reported per rank
+driver: 580.126.09
+PyTorch: 2.9.1+cu128
+CUDA runtime: 12.8
+precision: BF16 activations, FP32 scan accumulation
+world/device batch/sequence: 8 / 32 / 2,048
+global tokens per step: 524,288
+compile: true
+synthetic fixed token rows: true
+```
+
+Result:
+
+```text
+process exit: 0
+all eight ranks completed: yes
+finite loss and gradients on all ranks: yes
+optimizer steps: 2
+step 0, including compilation, max rank: 65.17646897956729 s, rank-0 loss 10.397625923156738
+step 1, steady shape, max rank: 0.12632401660084724 s, rank-0 loss 9.237276077270508
+steady global throughput: 4,150,343.0155852376 tokens/s
+peak allocated VRAM, max rank: 43,207,041,024 bytes (40.240 GiB)
+peak reserved VRAM, max rank: 47,355,789,312 bytes (44.104 GiB)
+parameter checksum spread across ranks: 0.0
+```
+
+This establishes that the intended device/global batch, NCCL process group, and
+distributed Muon/AdamW path can complete two compiled steps on the target
+hardware. It does not test data loading, dataset learning, validation BPB, CORE,
+GPT parity, end-to-end training stability, or sustained throughput. The loss
+change is only a synthetic optimizer sanity check. No parity claim is made.
+
+Artifacts:
+
+- `dev/results/statehead-nanochat-cuda-8gpu-preflight-v1.json`
+- retrieved raw JSON SHA-256: `43f6c4b9fb769125c77d85b6c3e3cf86434df0257f00f60975fd11c9ab153a00`
+- retrieved raw log SHA-256: `fba0b084577932b9ff3fb220b7882fe38a678cf38cfa8f5680ded94910e6d74d`
+
+The raw log contained benign warnings that NumPy was not installed in the
+prebuilt container. The probe itself does not use NumPy.
+
+### Eight-H100 preflight command ledger
+
+```bash
+sed -n '1,240p' /Users/haybales/.agents/skills/runpod/SKILL.md
+sed -n '1,320p' /Users/haybales/.agents/skills/runpodctl/SKILL.md
+date -u -v+15M '+%Y-%m-%dT%H:%M:%SZ'
+git rev-parse HEAD && git status --short && sed -n '1,240p' dev/experiments/statehead-nanochat-cuda-8gpu-preflight-v1.yaml
+runpodctl user
+runpodctl pod list --all
+runpodctl pod create --help
+runpodctl pod create --name statehead-cuda-8gpu-preflight-v1 --image runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404 --gpu-id "NVIDIA H100 80GB HBM3" --gpu-count 8 --cloud-type SECURE --container-disk-in-gb 30 --ports "22/tcp" --ssh --terminate-after 2026-07-23T02:09:49Z
+runpodctl pod get v1n834ijpcebmu
+runpodctl ssh info v1n834ijpcebmu
+ssh -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -p 22185 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 root@69.30.85.162 'nvidia-smi -L && python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.device_count())"'
+ssh -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -p 22185 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@69.30.85.162 'git clone --branch codex/statehead-nanochat --depth 1 https://github.com/samfurr/nanochat.git /workspace/nanochat && cd /workspace/nanochat && git rev-parse HEAD && bash -n runs/statehead_cuda_preflight.sh'
+ssh -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -p 22185 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@69.30.85.162 'cd /workspace/nanochat && NANOCHAT_REPO_COMMIT=2944ed65dfb26809073e7b3446ff6255513c83d4 NPROC_PER_NODE=8 DEVICE_BATCH_SIZE=32 PREFLIGHT_STEPS=2 RESULTS_DIR=/workspace/statehead-8gpu-results bash runs/statehead_cuda_preflight.sh'
+scp -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -P 22185 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@69.30.85.162:/workspace/statehead-8gpu-results/statehead-d12-b32-w8.json /private/tmp/statehead-d12-b32-w8.json
+scp -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -P 22185 -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@69.30.85.162:/workspace/statehead-8gpu-results/statehead-d12-b32-w8.log /private/tmp/statehead-d12-b32-w8.log
+jq -e '.repo_commit == "2944ed65dfb26809073e7b3446ff6255513c83d4" and .world_size == 8 and .compiled == true and .config.device_batch_size == 32 and (.steps | length) == 2 and .parameter_checksum_spread == 0' /private/tmp/statehead-d12-b32-w8.json
+shasum -a 256 /private/tmp/statehead-d12-b32-w8.json /private/tmp/statehead-d12-b32-w8.log
+wc -c /private/tmp/statehead-d12-b32-w8.json /private/tmp/statehead-d12-b32-w8.log
+runpodctl pod delete v1n834ijpcebmu
+runpodctl pod list --all
+runpodctl user
+sed -n '1,240p' dev/experiments/statehead-nanochat-cuda-8gpu-preflight-v1.yaml
+sed -n '1,280p' dev/experiments/statehead-nanochat-d12-controlled-v1.yaml
+tail -n 260 dev/STATEHEAD_LOG.md
+sed -n '1,260p' /private/tmp/statehead-d12-b32-w8.json
+sed -n '1,260p' /private/tmp/statehead-d12-b32-w8.log
+awk 'BEGIN { printf "cost_delta=%.10f\\npeak_allocated_gib=%.6f\\npeak_reserved_gib=%.6f\\n", 208.0753390127-207.1924766794, 43207041024/1073741824, 47355789312/1073741824 }'
+sed -n '1,260p' dev/experiments/statehead-nanochat-cuda-batch32-preflight-v1.yaml && sed -n '1,220p' dev/experiments/statehead-nanochat-cuda-preflight-v1.yaml
+```
+
+The controlled dataset-backed manifest is now gated only on a separate paid-run
+approval. It was not launched by this preflight.
+
+Post-retrieval local verification:
+
+```text
+result JSON byte-for-byte SHA-256 match: passed
+eight-GPU result and both dependent manifests: consistent
+focused StateHead suite: 42 passed in 2.33s
+full suite excluding known macOS memory-limit test: 85 passed, 14 skipped, 1 deselected in 4.77s
+bash syntax, compileall, diff check, and unchanged nanochat/gpt.py assertion: passed
+```
+
+```bash
+git status --short && git diff --stat && git diff --check
+shasum -a 256 dev/results/statehead-nanochat-cuda-8gpu-preflight-v1.json /private/tmp/statehead-d12-b32-w8.json
+.venv/bin/python -c '<assert artifact byte match and manifests consistent>'
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest tests/test_statehead.py -q
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
+bash -n runs/statehead_cuda_preflight.sh && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --check && git diff --quiet -- nanochat/gpt.py
+git diff -- dev/STATEHEAD_LOG.md dev/experiments/statehead-nanochat-cuda-8gpu-preflight-v1.yaml dev/experiments/statehead-nanochat-d12-controlled-v1.yaml dev/results/statehead-nanochat-cuda-8gpu-preflight-v1.json
+sed -n '675,735p' dev/STATEHEAD_LOG.md
+tail -n 80 dev/STATEHEAD_LOG.md
+rg -n '^## 2026-07-22 — eight-H100|^### Next gated probe|^## 2026-07-22 — one-H100 device-batch-32|^$' dev/STATEHEAD_LOG.md | tail -n 20
+rg -n '^## 2026-07-22 — eight-H100|^### Next gated probe|^## 2026-07-22 — one-H100 device-batch-32' dev/STATEHEAD_LOG.md
+git status --short
+git add dev/STATEHEAD_LOG.md dev/experiments/statehead-nanochat-cuda-8gpu-preflight-v1.yaml dev/experiments/statehead-nanochat-d12-controlled-v1.yaml dev/results/statehead-nanochat-cuda-8gpu-preflight-v1.json
+git diff --cached --check && git diff --cached --stat
+git commit -m 'Record eight-H100 StateHead DDP preflight'
+git push origin codex/statehead-nanochat
+git rev-parse HEAD && git status --short
+```
+
+### Device-batch capacity gate (subsequently completed)
 
 The controlled 8-GPU global batch is exactly `32 × 2,048 × 8 = 524,288`
-tokens. The successful device-batch-1 probe does not establish that device batch
-32 fits. `dev/experiments/statehead-nanochat-cuda-batch32-preflight-v1.yaml`
-therefore defines a separate one-H100, two-step capacity probe with a 15-minute
-hard termination guard. If batch 32 OOMs, the same bounded pod may retry batch 16
-and record the largest successful batch. No GPU is launched without a new cost
-approval.
+tokens. The successful device-batch-1 probe did not establish that device batch
+32 fit, so `dev/experiments/statehead-nanochat-cuda-batch32-preflight-v1.yaml`
+defined the separate one-H100, two-step capacity probe documented below.
 
 ## 2026-07-22 — one-H100 device-batch-32 capacity probe
 
@@ -643,10 +765,9 @@ runpodctl pod list --all
 runpodctl user
 ```
 
-`dev/experiments/statehead-nanochat-cuda-8gpu-preflight-v1.yaml` is the
-next gated experiment. It uses the same synthetic rows and two steps on eight
-H100s to test NCCL and the distributed Muon/AdamW path before any dataset-backed
-run.
+`dev/experiments/statehead-nanochat-cuda-8gpu-preflight-v1.yaml` was the
+subsequent gated experiment. Its completed NCCL and distributed Muon/AdamW
+result is documented above; no dataset-backed run was launched.
 
 Post-retrieval local verification:
 

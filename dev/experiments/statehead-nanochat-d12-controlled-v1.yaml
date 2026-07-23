@@ -1,5 +1,5 @@
 experiment_id: statehead-nanochat-d12-controlled-v1
-status: blocked_on_8gpu_ddp_preflight_and_full_run_approval
+status: awaiting_full_dataset_run_approval
 repo_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
 architecture: statehead
 comparison_run: gpt-d12-controlled-v1
@@ -32,6 +32,8 @@ statehead_device_batch_size: 32
 cuda_preflight_artifact: dev/results/statehead-nanochat-cuda-preflight-v1.json
 batch32_preflight_manifest: dev/experiments/statehead-nanochat-cuda-batch32-preflight-v1.yaml
 batch32_preflight_artifact: dev/results/statehead-nanochat-cuda-batch32-preflight-v1.json
+ddp_preflight_manifest: dev/experiments/statehead-nanochat-cuda-8gpu-preflight-v1.yaml
+ddp_preflight_artifact: dev/results/statehead-nanochat-cuda-8gpu-preflight-v1.json
 optimizer: nanochat_muon_adamw
 headwise_muon: false
 training_steps: 2520
