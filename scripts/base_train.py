@@ -55,8 +55,7 @@ parser.add_argument("--aspect-ratio", type=int, default=64, help="model_dim = de
 parser.add_argument("--head-dim", type=int, default=128, help="target attention or recurrent head dimension")
 parser.add_argument("--max-seq-len", type=int, default=2048, help="max context length")
 parser.add_argument("--window-pattern", type=str, default="SSSL", help="sliding window pattern tiled across layers: L=full, S=half context (e.g. 'SSL')")
-parser.add_argument("--statehead-scan-backend", type=str, default="auto", choices=["auto", "pytorch", "cuda", "cuda_projected", "cuda_projected_gates"], help="StateHead scan backend; projected variants are experimental projection/activation paths")
-parser.add_argument("--statehead-projection-tile-rows", type=int, default=16384, help="flattened token rows per cuBLAS tile for cuda_projected")
+parser.add_argument("--statehead-scan-backend", type=str, default="auto", choices=["auto", "pytorch", "cuda"], help="StateHead scan backend; auto selects native CUDA on CUDA and PyTorch elsewhere")
 # Training horizon (only one used, in order of precedence)
 parser.add_argument("--num-iterations", type=int, default=-1, help="explicit number of optimization steps (-1 = disable)")
 parser.add_argument("--target-flops", type=float, default=-1.0, help="calculate num_iterations to reach target_flops (-1 = disable)")
@@ -122,14 +121,8 @@ if args.arch == "statehead":
     statehead_scan_backend = args.statehead_scan_backend
     if statehead_scan_backend == "auto":
         statehead_scan_backend = "cuda" if device_type == "cuda" else "pytorch"
-    if statehead_scan_backend in (
-        "cuda",
-        "cuda_projected",
-        "cuda_projected_gates",
-    ) and device_type != "cuda":
-        raise ValueError(
-            f"--statehead-scan-backend={statehead_scan_backend} requires --device-type=cuda"
-        )
+    if statehead_scan_backend == "cuda" and device_type != "cuda":
+        raise ValueError("--statehead-scan-backend=cuda requires --device-type=cuda")
     print0(f"StateHead scan backend: {statehead_scan_backend}")
 else:
     if using_fa3:
@@ -176,7 +169,6 @@ def build_model_meta(depth):
                 sequence_len=args.max_seq_len, vocab_size=vocab_size,
                 n_layer=depth, n_head=num_heads, n_embd=model_dim,
                 scan_backend=args.statehead_scan_backend,
-                projection_tile_rows=args.statehead_projection_tile_rows,
             )
             model_meta = StateHead(config)
     return model_meta
@@ -282,11 +274,7 @@ def disable_fp8(model):
 # -----------------------------------------------------------------------------
 # Compile the model
 
-if args.arch == "statehead" and statehead_scan_backend in (
-    "cuda",
-    "cuda_projected",
-    "cuda_projected_gates",
-):
+if args.arch == "statehead" and statehead_scan_backend == "cuda":
     from nanochat.statehead_cuda import preload_statehead_cuda
 
     print0("Building/loading native StateHead CUDA extension before torch.compile")

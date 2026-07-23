@@ -131,17 +131,6 @@ def test_native_cuda_scan_rejects_cpu_tensors():
         statehead_scan_cuda(gates, state)
 
 
-def test_projected_cuda_rejects_cpu_tensors():
-    from nanochat.statehead_cuda import statehead_projected_cuda
-
-    x = torch.randn(1, 3, 8)
-    weight = torch.randn(32, 8)
-    bias = torch.randn(32)
-    state = torch.randn(1, 2, 4)
-    with pytest.raises(ValueError, match="requires CUDA tensors"):
-        statehead_projected_cuda(x, weight, bias, state, n_head=2)
-
-
 def test_native_cuda_fake_dispatch_shapes():
     from torch._subclasses.fake_tensor import FakeTensorMode
     from nanochat.statehead_cuda import _statehead_scan_forward
@@ -160,27 +149,6 @@ def test_native_cuda_fake_dispatch_shapes():
     assert chunk_initials.dtype == torch.float32
     assert activated_gates.shape == gates.shape
     assert activated_gates.dtype == gates.dtype
-
-
-def test_projected_cuda_fake_dispatch_shapes():
-    from torch._subclasses.fake_tensor import FakeTensorMode
-    from nanochat.statehead_cuda import _statehead_projected_forward
-
-    with FakeTensorMode():
-        x = torch.empty(2, 65, 24, device="cuda", dtype=torch.bfloat16)
-        weight = torch.empty(96, 24, device="cuda", dtype=torch.bfloat16)
-        bias = torch.empty(96, device="cuda", dtype=torch.bfloat16)
-        state = torch.empty(2, 3, 8, device="cuda", dtype=torch.bfloat16)
-        y, final_state, chunk_initials, activated_gates = (
-            _statehead_projected_forward(x, weight, bias, state, 3, 64, 32)
-        )
-    assert y.shape == (2, 65, 3, 8)
-    assert y.dtype == torch.bfloat16
-    assert final_state.shape == state.shape
-    assert chunk_initials.shape == (2, 2, 3, 8)
-    assert chunk_initials.dtype == torch.float32
-    assert activated_gates.shape == (2, 65, 4, 3, 8)
-    assert activated_gates.dtype == torch.bfloat16
 
 
 def _raw_gate_scan_reference(gates, initial_state):
@@ -360,13 +328,7 @@ def test_native_cuda_scan_compiles_fullgraph():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
-@pytest.mark.parametrize(
-    "native_backend",
-    ["cuda", "cuda_projected", "cuda_projected_gates"],
-)
-def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch(
-    native_backend,
-):
+def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch():
     from nanochat.statehead_cuda import preload_statehead_cuda
 
     preload_statehead_cuda()
@@ -381,8 +343,7 @@ def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch(
         scan_backend="pytorch",
     )
     native_config = copy.deepcopy(reference_config)
-    native_config.scan_backend = native_backend
-    native_config.projection_tile_rows = 32
+    native_config.scan_backend = "cuda"
     reference_model = StateHead(reference_config).cuda()
     reference_model.init_weights()
     with torch.no_grad():

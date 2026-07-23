@@ -15,23 +15,6 @@ std::vector<torch::Tensor> statehead_backward_cuda(
     torch::Tensor grad_final_state,
     int64_t chunk_size);
 
-std::vector<torch::Tensor> statehead_forward_projected_cuda(
-    torch::Tensor x,
-    torch::Tensor gate_weight,
-    torch::Tensor gate_bias,
-    torch::Tensor initial_state,
-    int64_t n_head,
-    int64_t chunk_size,
-    int64_t projection_tile_rows);
-
-std::vector<torch::Tensor> statehead_forward_projected_gates_cuda(
-    torch::Tensor x,
-    torch::Tensor gate_weight,
-    torch::Tensor gate_bias,
-    torch::Tensor initial_state,
-    int64_t n_head,
-    int64_t chunk_size);
-
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def(
       "forward",
@@ -41,12 +24,4 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
       "backward",
       &statehead_backward_cuda,
       "Fused StateHead reverse scan (CUDA)");
-  module.def(
-      "forward_projected",
-      &statehead_forward_projected_cuda,
-      "Pipelined StateHead gate projection, activation, and scan (CUDA)");
-  module.def(
-      "forward_projected_gates",
-      &statehead_forward_projected_gates_cuda,
-      "Gate-group-parallel StateHead projection, activation, and scan (CUDA)");
 }

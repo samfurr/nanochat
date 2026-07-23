@@ -377,3 +377,16 @@ The algebraic-tanh v10 probe passed 49 focused tests in both FP32 and BF16 but
 measured 940,096 tok/s, 0.92% below the same-host v4 control. The v10b
 follow-up retains `__expf` for sigmoid but uses CUDA's direct `__tanhf`
 intrinsic instead of expressing tanh through sigmoid.
+
+The short v10b probe reached 950,764 tok/s, only 0.20% above the short v4
+control. Paired 30-step runs resolved that as noise: v10b measured
+941,874 median tok/s and exact pre-fast-math v4 measured 942,686 tok/s.
+Fast math is therefore rejected at -0.09%.
+
+The final source restores the accepted CUDA v4 implementation byte-for-byte.
+The row-tiled, gate-group, and fast-math implementations remain available in
+the git commit ledger and recorded artifacts, but are removed from the active
+Python/CUDA source and CLI. The next serious projection/activation experiment
+must use a true tensor-core GEMM epilogue (for example a CUTLASS EVT/custom
+epilogue) so the mixed activation replaces, rather than overlaps, the
+standalone pass.

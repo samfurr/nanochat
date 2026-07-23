@@ -20,7 +20,6 @@ class StateHeadConfig:
     n_embd: int = 768
     scan_chunk_size: int = 64
     scan_backend: str = "auto"
-    projection_tile_rows: int = 16384
     retention_bias: float = 2.0
     learned_initial_state: bool = True
 
@@ -128,22 +127,13 @@ def statehead_scan_parallel(a, u, o, initial_state, chunk_size=64):
 class StateHeadBank(nn.Module):
     def __init__(self, config):
         super().__init__()
-        if config.scan_backend not in (
-            "auto",
-            "pytorch",
-            "cuda",
-            "cuda_projected",
-            "cuda_projected_gates",
-        ):
+        if config.scan_backend not in ("auto", "pytorch", "cuda"):
             raise ValueError(f"Unknown StateHead scan backend: {config.scan_backend}")
-        if config.projection_tile_rows < 1:
-            raise ValueError("StateHead projection_tile_rows must be positive")
         self.n_head = config.n_head
         self.head_dim = config.head_dim
         self.n_embd = config.n_embd
         self.chunk_size = config.scan_chunk_size
         self.scan_backend = config.scan_backend
-        self.projection_tile_rows = config.projection_tile_rows
         self.retention_bias = config.retention_bias
         self.gate = Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.gate_bias = nn.Parameter(torch.zeros(4 * config.n_embd))
@@ -163,41 +153,13 @@ class StateHeadBank(nn.Module):
         batch_size, sequence_len, n_embd = x.shape
         if state is None:
             state = self.fresh_state(batch_size, x.device, x.dtype)
+        gate_logits = self.gate(x)
         if scan_impl is None:
             scan_impl = self.scan_backend
         if scan_impl == "auto":
-            scan_impl = "cuda" if x.is_cuda else "parallel"
+            scan_impl = "cuda" if gate_logits.is_cuda else "parallel"
         elif scan_impl == "pytorch":
             scan_impl = "parallel"
-        if scan_impl == "cuda_projected":
-            from nanochat.statehead_cuda import statehead_projected_cuda
-
-            y, final_state = statehead_projected_cuda(
-                x,
-                self.gate.weight.to(dtype=x.dtype),
-                self.gate_bias.to(dtype=x.dtype),
-                state,
-                self.n_head,
-                self.chunk_size,
-                self.projection_tile_rows,
-            )
-            y = y.reshape(batch_size, sequence_len, n_embd)
-            return self.out_proj(y), final_state
-        if scan_impl == "cuda_projected_gates":
-            from nanochat.statehead_cuda import statehead_projected_gates_cuda
-
-            y, final_state = statehead_projected_gates_cuda(
-                x,
-                self.gate.weight.to(dtype=x.dtype),
-                self.gate_bias.to(dtype=x.dtype),
-                state,
-                self.n_head,
-                self.chunk_size,
-            )
-            y = y.reshape(batch_size, sequence_len, n_embd)
-            return self.out_proj(y), final_state
-
-        gate_logits = self.gate(x)
         if scan_impl == "cuda":
             from nanochat.statehead_cuda import statehead_scan_cuda
 
