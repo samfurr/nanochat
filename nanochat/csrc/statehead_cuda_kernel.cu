@@ -160,45 +160,105 @@ __global__ void statehead_output_kernel(
 }
 
 template <typename scalar_t>
-__global__ void statehead_backward_kernel(
+__global__ void statehead_backward_chunk_summary_kernel(
+    const scalar_t* __restrict__ gates,
+    const scalar_t* __restrict__ grad_output,
+    float* __restrict__ chunk_a,
+    float* __restrict__ chunk_u,
+    int64_t sequence_len,
+    int64_t n_head,
+    int64_t head_dim,
+    int64_t chunk_size,
+    int64_t n_chunks) {
+  const int64_t chunk = blockIdx.x;
+  const int64_t head = blockIdx.y;
+  const int64_t batch = blockIdx.z;
+  const int64_t start = chunk * chunk_size;
+  const int64_t stop =
+      start + chunk_size < sequence_len ? start + chunk_size : sequence_len;
+
+  for (int64_t dim = threadIdx.x; dim < head_dim; dim += blockDim.x) {
+    // Summarize the reverse recurrence as
+    // carry_before = transition_a * carry_after + transition_u.
+    float transition_a = 1.0f;
+    float transition_u = 0.0f;
+    for (int64_t time = stop - 1; time >= start; --time) {
+      const float a = sigmoidf(load_gate(
+          gates, batch, time, 0, head, dim, sequence_len, n_head, head_dim));
+      const float o = sigmoidf(load_gate(
+          gates, batch, time, 3, head, dim, sequence_len, n_head, head_dim));
+      const int64_t output_index =
+          ((batch * sequence_len + time) * n_head + head) * head_dim + dim;
+      const float dy = static_cast<float>(grad_output[output_index]);
+      transition_u = a * (transition_u + dy * o);
+      transition_a = a * transition_a;
+    }
+
+    const int64_t summary_index =
+        ((batch * n_chunks + chunk) * n_head + head) * head_dim + dim;
+    chunk_a[summary_index] = transition_a;
+    chunk_u[summary_index] = transition_u;
+  }
+}
+
+template <typename scalar_t>
+__global__ void statehead_backward_chunk_boundary_kernel(
+    const float* __restrict__ chunk_a,
+    const float* __restrict__ chunk_u,
+    const scalar_t* __restrict__ grad_final_state,
+    float* __restrict__ chunk_carries,
+    scalar_t* __restrict__ grad_initial_state,
+    int64_t n_head,
+    int64_t head_dim,
+    int64_t n_chunks) {
+  const int64_t head = blockIdx.y;
+  const int64_t batch = blockIdx.z;
+  for (int64_t dim = threadIdx.x; dim < head_dim; dim += blockDim.x) {
+    const int64_t state_index =
+        (batch * n_head + head) * head_dim + dim;
+    float carry = static_cast<float>(grad_final_state[state_index]);
+    for (int64_t chunk = n_chunks - 1; chunk >= 0; --chunk) {
+      const int64_t summary_index =
+          ((batch * n_chunks + chunk) * n_head + head) * head_dim + dim;
+      chunk_carries[summary_index] = carry;
+      carry = chunk_a[summary_index] * carry + chunk_u[summary_index];
+    }
+    grad_initial_state[state_index] = static_cast<scalar_t>(carry);
+  }
+}
+
+template <typename scalar_t>
+__global__ void statehead_backward_chunk_grad_kernel(
     const scalar_t* __restrict__ gates,
     const float* __restrict__ chunk_initials,
+    const float* __restrict__ chunk_carries,
     const scalar_t* __restrict__ grad_output,
-    const scalar_t* __restrict__ grad_final_state,
     scalar_t* __restrict__ grad_gates,
-    scalar_t* __restrict__ grad_initial_state,
-    int64_t total_states,
     int64_t sequence_len,
     int64_t n_head,
     int64_t head_dim,
     int64_t chunk_size,
     int64_t n_chunks) {
   extern __shared__ float local_states[];
-  const int64_t state_index =
-      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-  const bool active = state_index < total_states;
+  const int64_t chunk = blockIdx.x;
+  const int64_t head = blockIdx.y;
+  const int64_t batch = blockIdx.z;
+  const int64_t start = chunk * chunk_size;
+  const int64_t stop =
+      start + chunk_size < sequence_len ? start + chunk_size : sequence_len;
 
-  int64_t dim = 0;
-  int64_t head = 0;
-  int64_t batch = 0;
-  float carry = 0.0f;
-  if (active) {
-    dim = state_index % head_dim;
-    head = (state_index / head_dim) % n_head;
-    batch = state_index / (n_head * head_dim);
-    carry = static_cast<float>(grad_final_state[state_index]);
-  }
-
-  for (int64_t chunk = n_chunks - 1; chunk >= 0; --chunk) {
-    const int64_t start = chunk * chunk_size;
-    const int64_t stop =
-        start + chunk_size < sequence_len ? start + chunk_size : sequence_len;
+  // The production d12 shape has head_dim == blockDim.x. The loop retains
+  // correctness for other head dimensions without changing the public API.
+  for (int64_t dim_start = 0; dim_start < head_dim; dim_start += blockDim.x) {
+    const int64_t dim = dim_start + threadIdx.x;
+    const bool active = dim < head_dim;
     float chunk_initial = 0.0f;
-
+    float carry = 0.0f;
     if (active) {
       const int64_t summary_index =
           ((batch * n_chunks + chunk) * n_head + head) * head_dim + dim;
       chunk_initial = chunk_initials[summary_index];
+      carry = chunk_carries[summary_index];
       float replay = chunk_initial;
       for (int64_t time = start; time < stop; ++time) {
         const float a = sigmoidf(load_gate(
@@ -249,10 +309,6 @@ __global__ void statehead_backward_kernel(
       }
     }
     __syncthreads();
-  }
-
-  if (active) {
-    grad_initial_state[state_index] = static_cast<scalar_t>(carry);
   }
 }
 
@@ -418,8 +474,19 @@ std::vector<torch::Tensor> statehead_backward_cuda(
   const c10::cuda::CUDAGuard device_guard(gates.device());
   auto grad_gates = torch::empty_like(gates);
   auto grad_initial_state = torch::empty_like(grad_final_state);
-  const int blocks =
-      static_cast<int>((total_states + kBackwardThreads - 1) / kBackwardThreads);
+  auto float_options = gates.options().dtype(torch::kFloat);
+  auto chunk_a = torch::empty(
+      {batch, n_chunks, n_head, head_dim}, float_options);
+  auto chunk_u = torch::empty_like(chunk_a);
+  auto chunk_carries = torch::empty_like(chunk_a);
+  const dim3 chunk_grid(
+      static_cast<unsigned int>(n_chunks),
+      static_cast<unsigned int>(n_head),
+      static_cast<unsigned int>(batch));
+  const dim3 state_grid(
+      1,
+      static_cast<unsigned int>(n_head),
+      static_cast<unsigned int>(batch));
   const size_t shared_bytes =
       static_cast<size_t>(chunk_size) * kBackwardThreads * sizeof(float);
   const cudaStream_t stream = c10::cuda::getCurrentCUDAStream().stream();
@@ -430,15 +497,38 @@ std::vector<torch::Tensor> statehead_backward_cuda(
       gates.scalar_type(),
       "statehead_backward_cuda",
       [&] {
-        statehead_backward_kernel<scalar_t>
-            <<<blocks, kBackwardThreads, shared_bytes, stream>>>(
+        statehead_backward_chunk_summary_kernel<scalar_t>
+            <<<chunk_grid, kBackwardThreads, 0, stream>>>(
+                gates.data_ptr<scalar_t>(),
+                grad_y.data_ptr<scalar_t>(),
+                chunk_a.data_ptr<float>(),
+                chunk_u.data_ptr<float>(),
+                sequence_len,
+                n_head,
+                head_dim,
+                chunk_size,
+                n_chunks);
+        C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+        statehead_backward_chunk_boundary_kernel<scalar_t>
+            <<<state_grid, kBackwardThreads, 0, stream>>>(
+                chunk_a.data_ptr<float>(),
+                chunk_u.data_ptr<float>(),
+                grad_final_state.data_ptr<scalar_t>(),
+                chunk_carries.data_ptr<float>(),
+                grad_initial_state.data_ptr<scalar_t>(),
+                n_head,
+                head_dim,
+                n_chunks);
+        C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+        statehead_backward_chunk_grad_kernel<scalar_t>
+            <<<chunk_grid, kBackwardThreads, shared_bytes, stream>>>(
                 gates.data_ptr<scalar_t>(),
                 chunk_initials.data_ptr<float>(),
+                chunk_carries.data_ptr<float>(),
                 grad_y.data_ptr<scalar_t>(),
-                grad_final_state.data_ptr<scalar_t>(),
                 grad_gates.data_ptr<scalar_t>(),
-                grad_initial_state.data_ptr<scalar_t>(),
-                total_states,
                 sequence_len,
                 n_head,
                 head_dim,

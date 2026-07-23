@@ -156,10 +156,95 @@ def _raw_gate_scan_reference(gates, initial_state):
     )
 
 
+def _reverse_chunk_carries(a, o, grad_y, grad_final_state, chunk_size):
+    """Reference the affine reverse summaries used by the native CUDA v2 path."""
+    sequence_len = a.size(1)
+    n_chunks = (sequence_len + chunk_size - 1) // chunk_size
+    chunk_a = []
+    chunk_u = []
+    for chunk in range(n_chunks):
+        start = chunk * chunk_size
+        stop = min(start + chunk_size, sequence_len)
+        transition_a = torch.ones_like(grad_final_state)
+        transition_u = torch.zeros_like(grad_final_state)
+        for time in range(stop - 1, start - 1, -1):
+            transition_u = a[:, time] * (
+                transition_u + grad_y[:, time] * o[:, time]
+            )
+            transition_a = a[:, time] * transition_a
+        chunk_a.append(transition_a)
+        chunk_u.append(transition_u)
+
+    carry = grad_final_state
+    chunk_carries = [None] * n_chunks
+    for chunk in range(n_chunks - 1, -1, -1):
+        chunk_carries[chunk] = carry
+        carry = chunk_a[chunk] * carry + chunk_u[chunk]
+    return torch.stack(chunk_carries, dim=1), carry
+
+
+@pytest.mark.parametrize(
+    ("sequence_len", "chunk_size"),
+    [(1, 1), (31, 16), (32, 16), (33, 16), (65, 32), (129, 64), (2048, 32)],
+)
+def test_reverse_chunk_affine_summary_matches_direct_recurrence(
+    sequence_len, chunk_size
+):
+    generator = torch.Generator().manual_seed(7050 + sequence_len)
+    shape = (2, sequence_len, 2, 4)
+    a = torch.sigmoid(torch.randn(shape, generator=generator))
+    o = torch.sigmoid(torch.randn(shape, generator=generator))
+    grad_y = torch.randn(shape, generator=generator)
+    grad_final_state = torch.randn(2, 2, 4, generator=generator)
+
+    actual_carries, actual_initial = _reverse_chunk_carries(
+        a, o, grad_y, grad_final_state, chunk_size
+    )
+
+    n_chunks = (sequence_len + chunk_size - 1) // chunk_size
+    expected_carries = [None] * n_chunks
+    expected_initial = grad_final_state
+    for chunk in range(n_chunks - 1, -1, -1):
+        expected_carries[chunk] = expected_initial
+        start = chunk * chunk_size
+        stop = min(start + chunk_size, sequence_len)
+        for time in range(stop - 1, start - 1, -1):
+            expected_initial = a[:, time] * (
+                expected_initial + grad_y[:, time] * o[:, time]
+            )
+
+    torch.testing.assert_close(
+        actual_carries,
+        torch.stack(expected_carries, dim=1),
+        rtol=3e-5,
+        atol=3e-6,
+    )
+    torch.testing.assert_close(
+        actual_initial,
+        expected_initial,
+        rtol=3e-5,
+        atol=3e-6,
+    )
+
+
+CUDA_SCAN_CASES = [
+    (1, 1),
+    (31, 16),
+    (32, 16),
+    (33, 16),
+    (63, 32),
+    (64, 32),
+    (65, 32),
+    (129, 64),
+    (2048, 32),
+    (2048, 64),
+]
+
+
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
-@pytest.mark.parametrize("sequence_len", [1, 63, 64, 65, 129, 2048])
+@pytest.mark.parametrize(("sequence_len", "chunk_size"), CUDA_SCAN_CASES)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
-def test_native_cuda_forward_matches_reference(sequence_len, dtype):
+def test_native_cuda_forward_matches_reference(sequence_len, chunk_size, dtype):
     from nanochat.statehead_cuda import statehead_scan_cuda
 
     generator = torch.Generator(device="cuda").manual_seed(7000 + sequence_len)
@@ -169,7 +254,7 @@ def test_native_cuda_forward_matches_reference(sequence_len, dtype):
     initial_state = torch.randn(
         2, 3, 8, generator=generator, device="cuda", dtype=dtype
     )
-    actual = statehead_scan_cuda(gates, initial_state, chunk_size=64)
+    actual = statehead_scan_cuda(gates, initial_state, chunk_size=chunk_size)
     expected = _raw_gate_scan_reference(gates, initial_state)
     tolerance = 2e-2 if dtype == torch.bfloat16 else 3e-5
     torch.testing.assert_close(actual[0], expected[0], rtol=tolerance, atol=tolerance)
@@ -177,14 +262,27 @@ def test_native_cuda_forward_matches_reference(sequence_len, dtype):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
-def test_native_cuda_gradient_matches_reference():
+@pytest.mark.parametrize(
+    ("sequence_len", "chunk_size"),
+    [(1, 1), (31, 16), (33, 16), (65, 32), (129, 64), (2048, 32), (2048, 64)],
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_native_cuda_gradient_matches_reference(sequence_len, chunk_size, dtype):
     from nanochat.statehead_cuda import statehead_scan_cuda
 
-    generator = torch.Generator(device="cuda").manual_seed(7100)
-    base_gates = torch.randn(2, 65, 4, 2, 4, generator=generator, device="cuda")
-    base_state = torch.randn(2, 2, 4, generator=generator, device="cuda")
-    output_weight = torch.randn(2, 65, 2, 4, generator=generator, device="cuda")
-    state_weight = torch.randn(2, 2, 4, generator=generator, device="cuda")
+    generator = torch.Generator(device="cuda").manual_seed(7100 + sequence_len)
+    base_gates = torch.randn(
+        2, sequence_len, 4, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
+    base_state = torch.randn(
+        2, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
+    output_weight = torch.randn(
+        2, sequence_len, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
+    state_weight = torch.randn(
+        2, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
 
     def gradients(scan):
         gates = base_gates.detach().clone().requires_grad_()
@@ -193,10 +291,16 @@ def test_native_cuda_gradient_matches_reference():
         loss = (y * output_weight).sum() + (final_state * state_weight).sum()
         return torch.autograd.grad(loss, (gates, initial_state))
 
-    actual = gradients(lambda gates, state: statehead_scan_cuda(gates, state, 64))
+    actual = gradients(
+        lambda gates, state: statehead_scan_cuda(gates, state, chunk_size)
+    )
     expected = gradients(_raw_gate_scan_reference)
-    torch.testing.assert_close(actual[0], expected[0], rtol=3e-4, atol=3e-5)
-    torch.testing.assert_close(actual[1], expected[1], rtol=3e-4, atol=3e-5)
+    if dtype == torch.bfloat16:
+        rtol, atol = 3e-2, 3e-2
+    else:
+        rtol, atol = 5e-4, 5e-5
+    torch.testing.assert_close(actual[0], expected[0], rtol=rtol, atol=atol)
+    torch.testing.assert_close(actual[1], expected[1], rtol=rtol, atol=atol)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
