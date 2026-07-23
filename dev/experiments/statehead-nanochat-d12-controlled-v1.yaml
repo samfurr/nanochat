@@ -1,11 +1,11 @@
 experiment_id: statehead-nanochat-d12-controlled-v1
-status: running_vast_statehead_only
+status: running_vast_controlled_pair
 model_code_commit: b952753243ea14ac391d617244f2fbd52ba0a487
 architecture: statehead
 comparison_run: gpt-d12-controlled-v1
 comparison_manifest: dev/experiments/gpt-d12-controlled-v1.yaml
-approved_architecture_scope: statehead_only
-gpt_control_source: existing_known_gpt_results
+approved_architecture_scope: statehead_and_gpt
+gpt_control_source: matched_new_run
 seed: 1337
 precision: bfloat16
 fp8: false
@@ -142,9 +142,8 @@ vast_execution:
   status: running
   paid_run_approved: true
   approved_utc: 2026-07-23
-  run_arches: statehead
-  gpt_training_skipped: true
-  gpt_skip_reason: known_control_result
+  run_arches: statehead_then_gpt
+  gpt_training_skipped: false
   offer_id: 40228016
   machine_id: 68392
   geolocation: Japan_JP
