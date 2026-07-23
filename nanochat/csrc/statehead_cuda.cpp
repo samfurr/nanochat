@@ -48,5 +48,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, module) {
   module.def(
       "forward_projected_gates",
       &statehead_forward_projected_gates_cuda,
-      "Gate-parallel StateHead projection, activation, and scan (CUDA)");
+      "Gate-group-parallel StateHead projection, activation, and scan (CUDA)");
 }

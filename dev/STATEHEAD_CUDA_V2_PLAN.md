@@ -354,3 +354,8 @@ finite-gradient gates and beats the same-host v4 full-step control. If four
 `[D,D]` GEMMs lose more tensor-core efficiency than concurrency recovers,
 reject it and retain v4. A two-group `[2D,D]` split is the only justified
 follow-up before moving to a CUTLASS/cuBLASLt custom mixed-activation epilogue.
+
+The four-way v8 probe passed 49 focused BF16 tests but measured only
+884,133 tok/s, 6.82% below the same-host v4 control, and peaked at 14.15 GiB.
+It is rejected. The v9 follow-up keeps the same explicit experimental backend
+but uses exactly two contiguous `[2D,D]` projection groups and two streams.

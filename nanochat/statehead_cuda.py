@@ -414,7 +414,7 @@ def statehead_projected_gates_cuda(
     n_head,
     chunk_size=64,
 ):
-    """Project the four gate blocks concurrently, activate, then scan."""
+    """Project two contiguous gate groups concurrently, activate, then scan."""
     tensors = (x, gate_weight, gate_bias, initial_state)
     if not all(tensor.is_cuda for tensor in tensors):
         raise ValueError("statehead_projected_gates_cuda requires CUDA tensors")
