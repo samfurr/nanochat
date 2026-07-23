@@ -99,6 +99,145 @@ def test_bank_parameter_and_input_gradient_parity():
         torch.testing.assert_close(actual, expected, rtol=3e-4, atol=3e-5)
 
 
+def test_auto_scan_uses_reference_backend_off_cuda():
+    torch.manual_seed(8)
+    config = StateHeadConfig(
+        sequence_len=17,
+        vocab_size=64,
+        n_layer=1,
+        n_head=2,
+        n_embd=8,
+        scan_chunk_size=8,
+    )
+    bank = StateHeadBank(config)
+    with torch.no_grad():
+        bank.gate.weight.normal_(std=0.1)
+        bank.out_proj.weight.normal_(std=0.1)
+    x = torch.randn(2, 17, 8)
+    auto = bank(x, scan_impl="auto")
+    reference = bank(x, scan_impl="parallel")
+    torch.testing.assert_close(auto[0], reference[0], rtol=0, atol=0)
+    torch.testing.assert_close(auto[1], reference[1], rtol=0, atol=0)
+
+
+def test_native_cuda_scan_rejects_cpu_tensors():
+    from nanochat.statehead_cuda import statehead_scan_cuda
+
+    gates = torch.randn(1, 3, 4, 2, 4)
+    state = torch.randn(1, 2, 4)
+    with pytest.raises(ValueError, match="requires CUDA tensors"):
+        statehead_scan_cuda(gates, state)
+
+
+def test_native_cuda_fake_dispatch_shapes():
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from nanochat.statehead_cuda import _statehead_scan_forward
+
+    with FakeTensorMode():
+        gates = torch.empty(2, 65, 4, 3, 8, device="cuda", dtype=torch.bfloat16)
+        state = torch.empty(2, 3, 8, device="cuda", dtype=torch.bfloat16)
+        y, final_state, chunk_initials = _statehead_scan_forward(gates, state, 64)
+    assert y.shape == (2, 65, 3, 8)
+    assert y.dtype == torch.bfloat16
+    assert final_state.shape == state.shape
+    assert chunk_initials.shape == (2, 2, 3, 8)
+    assert chunk_initials.dtype == torch.float32
+
+
+def _raw_gate_scan_reference(gates, initial_state):
+    a_logits, b_logits, c_logits, o_logits = gates.unbind(dim=2)
+    return statehead_scan_sequential(
+        torch.sigmoid(a_logits),
+        torch.sigmoid(b_logits) * torch.tanh(c_logits),
+        torch.sigmoid(o_logits),
+        initial_state,
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
+@pytest.mark.parametrize("sequence_len", [1, 63, 64, 65, 129, 2048])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_native_cuda_forward_matches_reference(sequence_len, dtype):
+    from nanochat.statehead_cuda import statehead_scan_cuda
+
+    generator = torch.Generator(device="cuda").manual_seed(7000 + sequence_len)
+    gates = torch.randn(
+        2, 4, sequence_len, 3, 8, generator=generator, device="cuda", dtype=dtype
+    ).transpose(1, 2).contiguous()
+    initial_state = torch.randn(
+        2, 3, 8, generator=generator, device="cuda", dtype=dtype
+    )
+    actual = statehead_scan_cuda(gates, initial_state, chunk_size=64)
+    expected = _raw_gate_scan_reference(gates, initial_state)
+    tolerance = 2e-2 if dtype == torch.bfloat16 else 3e-5
+    torch.testing.assert_close(actual[0], expected[0], rtol=tolerance, atol=tolerance)
+    torch.testing.assert_close(actual[1], expected[1], rtol=tolerance, atol=tolerance)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
+def test_native_cuda_gradient_matches_reference():
+    from nanochat.statehead_cuda import statehead_scan_cuda
+
+    generator = torch.Generator(device="cuda").manual_seed(7100)
+    base_gates = torch.randn(2, 65, 4, 2, 4, generator=generator, device="cuda")
+    base_state = torch.randn(2, 2, 4, generator=generator, device="cuda")
+    output_weight = torch.randn(2, 65, 2, 4, generator=generator, device="cuda")
+    state_weight = torch.randn(2, 2, 4, generator=generator, device="cuda")
+
+    def gradients(scan):
+        gates = base_gates.detach().clone().requires_grad_()
+        initial_state = base_state.detach().clone().requires_grad_()
+        y, final_state = scan(gates, initial_state)
+        loss = (y * output_weight).sum() + (final_state * state_weight).sum()
+        return torch.autograd.grad(loss, (gates, initial_state))
+
+    actual = gradients(lambda gates, state: statehead_scan_cuda(gates, state, 64))
+    expected = gradients(_raw_gate_scan_reference)
+    torch.testing.assert_close(actual[0], expected[0], rtol=3e-4, atol=3e-5)
+    torch.testing.assert_close(actual[1], expected[1], rtol=3e-4, atol=3e-5)
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
+def test_native_cuda_scan_compiles_fullgraph():
+    from nanochat.statehead_cuda import statehead_scan_cuda
+
+    gates = torch.randn(1, 65, 4, 2, 8, device="cuda", dtype=torch.bfloat16)
+    initial_state = torch.randn(1, 2, 8, device="cuda", dtype=torch.bfloat16)
+
+    def loss_fn(raw_gates, state):
+        y, final_state = statehead_scan_cuda(raw_gates, state, 64)
+        return y.float().square().mean() + final_state.float().square().mean()
+
+    compiled = torch.compile(loss_fn, dynamic=False, fullgraph=True)
+    loss = compiled(gates.requires_grad_(), initial_state.requires_grad_())
+    loss.backward()
+    assert torch.isfinite(loss)
+    assert torch.isfinite(gates.grad).all()
+    assert torch.isfinite(initial_state.grad).all()
+
+
+def test_statehead_fp8_filter_matches_large_linear_recipe():
+    from nanochat.fp8 import Float8Linear, convert_to_float8_training, is_float8_linear_eligible
+
+    config = StateHeadConfig(
+        sequence_len=8,
+        vocab_size=256,
+        n_layer=1,
+        n_head=1,
+        n_embd=128,
+    )
+    model = StateHead(config)
+    flops_before = model.estimate_flops()
+    convert_to_float8_training(model, module_filter_fn=is_float8_linear_eligible)
+    converted = [name for name, module in model.named_modules() if isinstance(module, Float8Linear)]
+    assert converted == [
+        "transformer.h.0.state_bank.gate",
+        "transformer.h.0.state_bank.out_proj",
+        "lm_head",
+    ]
+    assert model.estimate_flops() == flops_before
+
+
 @pytest.mark.parametrize("split", [1, 63, 64, 65, 128])
 def test_segmentation_property(split):
     a, u, o, initial_state = make_scan_inputs(2, 129)
@@ -171,9 +310,11 @@ def test_prefill_matches_token_by_token_decode_with_smear():
         )
         logits.append(step_logits)
     decode_logits = torch.cat(logits, dim=1)
-    torch.testing.assert_close(decode_logits, full_logits, rtol=3e-5, atol=3e-6)
+    reduced_precision = full_states[0].dtype in (torch.float16, torch.bfloat16)
+    rtol, atol = (2e-2, 2e-2) if reduced_precision else (3e-5, 3e-6)
+    torch.testing.assert_close(decode_logits, full_logits, rtol=rtol, atol=atol)
     for actual, expected in zip(states, full_states):
-        torch.testing.assert_close(actual, expected, rtol=3e-5, atol=3e-6)
+        torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
     torch.testing.assert_close(prev_embedding, full_prev)
 
 

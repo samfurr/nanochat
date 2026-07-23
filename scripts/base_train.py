@@ -55,6 +55,7 @@ parser.add_argument("--aspect-ratio", type=int, default=64, help="model_dim = de
 parser.add_argument("--head-dim", type=int, default=128, help="target attention or recurrent head dimension")
 parser.add_argument("--max-seq-len", type=int, default=2048, help="max context length")
 parser.add_argument("--window-pattern", type=str, default="SSSL", help="sliding window pattern tiled across layers: L=full, S=half context (e.g. 'SSL')")
+parser.add_argument("--statehead-scan-backend", type=str, default="auto", choices=["auto", "pytorch", "cuda"], help="StateHead scan backend; auto selects native CUDA on CUDA and PyTorch elsewhere")
 # Training horizon (only one used, in order of precedence)
 parser.add_argument("--num-iterations", type=int, default=-1, help="explicit number of optimization steps (-1 = disable)")
 parser.add_argument("--target-flops", type=float, default=-1.0, help="calculate num_iterations to reach target_flops (-1 = disable)")
@@ -117,7 +118,12 @@ wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat", 
 from nanochat.flash_attention import USE_FA3
 using_fa3 = USE_FA3
 if args.arch == "statehead":
-    print0("Using the correctness-first PyTorch StateHead scan (FP8 disabled)")
+    statehead_scan_backend = args.statehead_scan_backend
+    if statehead_scan_backend == "auto":
+        statehead_scan_backend = "cuda" if device_type == "cuda" else "pytorch"
+    if statehead_scan_backend == "cuda" and device_type != "cuda":
+        raise ValueError("--statehead-scan-backend=cuda requires --device-type=cuda")
+    print0(f"StateHead scan backend: {statehead_scan_backend}")
 else:
     if using_fa3:
         print0("✓ Using Flash Attention 3: efficient, new and awesome.")
@@ -162,6 +168,7 @@ def build_model_meta(depth):
             config = StateHeadConfig(
                 sequence_len=args.max_seq_len, vocab_size=vocab_size,
                 n_layer=depth, n_head=num_heads, n_embd=model_dim,
+                scan_backend=args.statehead_scan_backend,
             )
             model_meta = StateHead(config)
     return model_meta
@@ -192,31 +199,26 @@ if resuming:
 # -----------------------------------------------------------------------------
 # FP8 training initialization and management (this has to be done before torch.compile)
 
-# Convert Linear layers to Float8Linear if --fp8 is set
-if args.fp8 and args.arch == "statehead":
-    raise ValueError("FP8 is intentionally disabled for StateHead during the correctness-first phases")
+# Convert eligible large Linear layers to Float8Linear if --fp8 is set. StateHead
+# uses the same tensorwise recipe and size/alignment filter as the winning GPT
+# runs; its recurrent scan remains FP32-accumulating BF16/FP16/FP32 code.
 if args.fp8:
     if device_type != "cuda":
         print0("Warning: FP8 training requires CUDA, ignoring --fp8 flag")
     else:
         # our custom fp8 is simpler than torchao, written for exact API compatibility
-        from nanochat.fp8 import Float8LinearConfig, convert_to_float8_training
+        from nanochat.fp8 import (
+            Float8LinearConfig,
+            convert_to_float8_training,
+            is_float8_linear_eligible,
+        )
         # from torchao.float8 import Float8LinearConfig, convert_to_float8_training
         import torch.nn as nn
 
         # Filter: dims must be divisible by 16 (FP8 hardware requirement) large enough
-        def fp8_module_filter(mod: nn.Module, fqn: str) -> bool:
-            if not isinstance(mod, nn.Linear):
-                return False
-            if mod.in_features % 16 != 0 or mod.out_features % 16 != 0:
-                return False
-            if min(mod.in_features, mod.out_features) < 128:
-                return False
-            return True
-
         fp8_config = Float8LinearConfig.from_recipe_name(args.fp8_recipe)
         num_linear = sum(1 for m in model.modules() if isinstance(m, nn.Linear))
-        convert_to_float8_training(model, config=fp8_config, module_filter_fn=fp8_module_filter)
+        convert_to_float8_training(model, config=fp8_config, module_filter_fn=is_float8_linear_eligible)
         num_fp8 = sum(1 for m in model.modules() if 'Float8' in type(m).__name__)
         num_skipped = num_linear - num_fp8
         print0(f"✓ FP8 training enabled ({args.fp8_recipe} scaling) - converted {num_fp8}/{num_linear} linear layers, skipped {num_skipped} (too small)")
@@ -271,6 +273,12 @@ def disable_fp8(model):
 
 # -----------------------------------------------------------------------------
 # Compile the model
+
+if args.arch == "statehead" and statehead_scan_backend == "cuda":
+    from nanochat.statehead_cuda import preload_statehead_cuda
+
+    print0("Building/loading native StateHead CUDA extension before torch.compile")
+    preload_statehead_cuda()
 
 orig_model = model # original, uncompiled model, for saving raw model state_dict and for inference/evaluation (because the shapes may change shape)
 model = torch.compile(model, dynamic=False) # the inputs to model will never change shape so dynamic=False is safe

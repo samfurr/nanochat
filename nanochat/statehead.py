@@ -19,6 +19,7 @@ class StateHeadConfig:
     n_head: int = 6
     n_embd: int = 768
     scan_chunk_size: int = 64
+    scan_backend: str = "auto"
     retention_bias: float = 2.0
     learned_initial_state: bool = True
 
@@ -126,10 +127,13 @@ def statehead_scan_parallel(a, u, o, initial_state, chunk_size=64):
 class StateHeadBank(nn.Module):
     def __init__(self, config):
         super().__init__()
+        if config.scan_backend not in ("auto", "pytorch", "cuda"):
+            raise ValueError(f"Unknown StateHead scan backend: {config.scan_backend}")
         self.n_head = config.n_head
         self.head_dim = config.head_dim
         self.n_embd = config.n_embd
         self.chunk_size = config.scan_chunk_size
+        self.scan_backend = config.scan_backend
         self.retention_bias = config.retention_bias
         self.gate = Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.gate_bias = nn.Parameter(torch.zeros(4 * config.n_embd))
@@ -145,12 +149,25 @@ class StateHeadBank(nn.Module):
             batch_size, -1, -1
         )
 
-    def forward(self, x, state=None, scan_impl="parallel"):
+    def forward(self, x, state=None, scan_impl=None):
         batch_size, sequence_len, n_embd = x.shape
         if state is None:
             state = self.fresh_state(batch_size, x.device, x.dtype)
         gates = self.gate(x) + self.gate_bias.to(x.dtype)
         gates = gates.view(batch_size, sequence_len, 4, self.n_head, self.head_dim)
+        if scan_impl is None:
+            scan_impl = self.scan_backend
+        if scan_impl == "auto":
+            scan_impl = "cuda" if gates.is_cuda else "parallel"
+        elif scan_impl == "pytorch":
+            scan_impl = "parallel"
+        if scan_impl == "cuda":
+            from nanochat.statehead_cuda import statehead_scan_cuda
+
+            y, final_state = statehead_scan_cuda(gates, state, self.chunk_size)
+            y = y.reshape(batch_size, sequence_len, n_embd)
+            return self.out_proj(y), final_state
+
         a_logits, b_logits, c_logits, o_logits = gates.unbind(dim=2)
         a = torch.sigmoid(a_logits)
         u = torch.sigmoid(b_logits) * torch.tanh(c_logits)
@@ -170,7 +187,7 @@ class StateHeadBlock(nn.Module):
         super().__init__()
         self.state_bank = StateHeadBank(config)
 
-    def forward(self, x, state=None, scan_impl="parallel"):
+    def forward(self, x, state=None, scan_impl=None):
         delta, next_state = self.state_bank(norm(x), state, scan_impl=scan_impl)
         return x + delta, next_state
 
@@ -226,7 +243,7 @@ class StateHead(nn.Module):
         return self.transformer.wte.weight.device
 
     def num_matmul_params(self):
-        return sum(m.weight.numel() for m in self.modules() if isinstance(m, Linear))
+        return sum(m.weight.numel() for m in self.modules() if isinstance(m, nn.Linear))
 
     def estimate_flops(self):
         # Projection FLOPs use nanochat's forward+backward convention. The extra
@@ -315,7 +332,7 @@ class StateHead(nn.Module):
             group["initial_lr"] = group["lr"]
         return optimizer
 
-    def forward_with_state(self, idx, states=None, prev_embedding=None, scan_impl="parallel"):
+    def forward_with_state(self, idx, states=None, prev_embedding=None, scan_impl=None):
         """Forward with explicit recurrent state, used for correctness checks and naive decode."""
         batch_size, sequence_len = idx.shape
         if states is not None:

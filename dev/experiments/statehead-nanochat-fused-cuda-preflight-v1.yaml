@@ -1,0 +1,44 @@
+experiment_id: statehead-nanochat-fused-cuda-preflight-v1
+status: implementation_ready_local_cuda_unverified
+purpose: native_cuda_correctness_and_full_step_speed_gate
+scientific_result: false
+repo_commit: FILL_AFTER_IMPLEMENTATION_COMMIT
+seed: 1337
+hardware: 1x_NVIDIA_H100_80GB_HBM3
+container_image: runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404
+maximum_runtime_minutes: 30
+terminate_guard: required
+architecture: statehead
+layers: 12
+model_width: 768
+state_heads: 6
+head_width: 128
+sequence_length: 2048
+device_batch_size: 32
+scan_chunk_size: 64
+scan_accumulation: float32
+reference:
+  precision: bfloat16
+  fp8: false
+  scan_backend: pytorch
+candidates:
+  - precision: bfloat16
+    fp8: false
+    scan_backend: cuda
+  - precision: bfloat16
+    fp8: tensorwise_dynamic
+    fp8_forward_operands: e4m3fn
+    fp8_backward_grad_output: e5m2
+    scan_backend: cuda
+correctness_commands:
+  - NANOCHAT_DTYPE=float32 python -m pytest tests/test_statehead.py -q
+  - NANOCHAT_DTYPE=bfloat16 python -m pytest tests/test_statehead.py -q
+benchmark_metric: full_optimizer_step_tokens_per_second
+benchmark_steps: 5
+claims_not_authorized_without_results:
+  - cuda_forward_parity
+  - cuda_gradient_parity
+  - compiled_cuda_compatibility
+  - fp8_learning_parity
+  - speedup_over_pytorch_reference
+  - speedup_or_parity_vs_flash_attention_gpt

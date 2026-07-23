@@ -43,6 +43,8 @@ def main():
     parser.add_argument("--heads", type=int, default=6)
     parser.add_argument("--vocab-size", type=int, default=32768)
     parser.add_argument("--scan-chunk-size", type=int, default=64)
+    parser.add_argument("--scan-backend", choices=["pytorch", "cuda"], default="pytorch")
+    parser.add_argument("--fp8", action="store_true")
     parser.add_argument("--eager", action="store_true", help="disable torch.compile")
     parser.add_argument("--output", type=str, default="")
     args = parser.parse_args()
@@ -65,12 +67,18 @@ def main():
         n_head=args.heads,
         n_embd=args.model_width,
         scan_chunk_size=args.scan_chunk_size,
+        scan_backend=args.scan_backend,
     )
     with torch.device("meta"):
         model = StateHead(config)
     model.to_empty(device=device)
     model.init_weights()
     original_model = model
+
+    if args.scan_backend == "cuda":
+        from nanochat.statehead_cuda import preload_statehead_cuda
+
+        preload_statehead_cuda()
 
     counts = original_model.num_scaling_params()
     scaling_params = counts["transformer_matrices"] + counts["lm_head"]
@@ -79,6 +87,18 @@ def main():
         batch_size=args.device_batch_size,
         dtype=torch.bfloat16,
     )
+
+    fp8_linear_count = 0
+    if args.fp8:
+        from nanochat.fp8 import convert_to_float8_training, is_float8_linear_eligible
+
+        convert_to_float8_training(
+            model,
+            module_filter_fn=is_float8_linear_eligible,
+        )
+        fp8_linear_count = sum(
+            "Float8" in type(module).__name__ for module in model.modules()
+        )
 
     if not args.eager:
         model = torch.compile(model, dynamic=False)
@@ -165,6 +185,8 @@ def main():
         "compiled": not args.eager,
         "seed": args.seed,
         "precision": str(COMPUTE_DTYPE),
+        "fp8": args.fp8,
+        "fp8_linear_count": fp8_linear_count,
         "config": vars(args),
         "parameter_counts": counts,
         "scaling_params": scaling_params,

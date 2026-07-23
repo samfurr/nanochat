@@ -553,6 +553,104 @@ NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
 git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git status --short
 ```
 
+## 2026-07-22 — Phase 5 native CUDA candidate and winner-matching FP8 wiring
+
+The user explicitly moved the work into the performance phase and asked to
+match the GPT leaderboard run's quantization while taking implementation
+inspiration from the fused MLX kernel in
+`/Users/haybales/projects/statehead-speed`.
+
+### Source-of-truth precision decision
+
+The checked-out leaderboard winner and `runs/speedrun.sh` use `--fp8` with the
+`tensorwise` recipe. This is mixed-precision training, not an 8-bit stored
+model:
+
+- master matrix weights and optimizer state remain FP32;
+- ordinary CUDA compute/activations remain BF16;
+- each eligible large `nn.Linear` dynamically quantizes one scale per tensor;
+- forward inputs and weights use `float8_e4m3fn`;
+- backward grad-output uses `float8_e5m2` while saved inputs/weights remain
+  `float8_e4m3fn`;
+- cuBLAS `torch._scaled_mm` performs the three Linear GEMMs;
+- the current winner filter requires both dimensions divisible by 16 and the
+  smaller dimension at least 128;
+- evaluation temporarily restores the BF16 Linear path.
+
+`STATEHEAD_NANOCHAT_CODEX_BRIEF.md` already specifies the same Phase 5
+boundary: fuse gate activations plus forward/reverse scan, retain large
+projections as high-performance GEMMs, use FP8 only around gate/output GEMMs,
+and keep recurrence accumulation in FP32.
+
+### Implementation
+
+- Added a lazy-built PyTorch C++/CUDA extension. Its blocked algorithm mirrors
+  the MLX implementation: FP32 affine chunk summaries, FP32 chunk-boundary
+  scan, FP32 per-chunk output replay, and a reverse kernel that replays one
+  chunk into shared memory before applying the analytical gate gradients.
+- The native op consumes raw `[B,T,4,H,Dh]` gates and fuses sigmoid/tanh gate
+  activation into forward and reverse recurrence kernels. The gate projection
+  and output projections remain GEMMs.
+- The GPU extra now declares and locks Ninja, which PyTorch's lazy C++/CUDA
+  extension builder requires.
+- The autograd boundary uses `torch.library.custom_op` with fake-tensor shape
+  registrations so `torch.compile` can treat forward and backward as opaque
+  native operations.
+- `scan_backend=auto` selects native CUDA on CUDA and the existing functional
+  PyTorch reference on CPU/MPS. Both `pytorch` and `cuda` are explicit CLI
+  choices.
+- StateHead may now use the same FP8 conversion recipe/filter as GPT. At a
+  representative aligned test shape this converts the StateHead gate, block
+  output projection, and LM output projection; the recurrent scan itself never
+  receives FP8 tensors and continues to accumulate in FP32.
+- The existing preflight runner now accepts explicit scan backend and FP8
+  switches. Its defaults remain the historical PyTorch/BF16 behavior.
+
+No Transformer module code changed.
+
+### Local verification
+
+```text
+native CUDA extension actually compiled with nvcc: not available locally
+host C++ binding syntax check: passed
+custom-op fake CUDA shape/dtype dispatch: passed
+custom-op registered autograd exercised with a CPU test double: passed
+StateHead FP32 focused suite: 46 passed, 14 CUDA-only skipped
+StateHead BF16 focused suite: 46 passed, 14 CUDA-only skipped
+full suite excluding known macOS memory-limit test: 89 passed, 28 skipped, 1 deselected
+CPU five-step compiled smoke loss: 5.925142 -> 5.915248
+MPS/BF16 five-step compiled smoke loss: 5.924298 -> 5.914391
+MPS/BF16 finite checkpoint save: passed
+shell syntax, Python compileall, diff check: passed
+unchanged nanochat/gpt.py assertion: passed
+```
+
+The first BF16 focused invocation exposed that the existing prefill-versus-
+token-decode assertion still used FP32 tolerances even when global compute was
+BF16. Its maximum state difference was `0.003173828125`. The assertion now uses
+the same `2e-2` reduced-precision tolerance as the existing BF16 scan parity
+test; both FP32 and BF16 suites pass.
+
+### Claims still unresolved
+
+The local machine cannot compile or execute CUDA. Therefore none of the
+following is claimed yet:
+
+- successful nvcc build against PyTorch 2.9.1/CUDA 12.8;
+- native CUDA forward or gradient parity;
+- native custom-op fullgraph compilation on H100;
+- FP8 StateHead finite training or learning parity;
+- native scan speedup over the PyTorch scan;
+- end-to-end StateHead speed approaching the FlashAttention GPT baseline.
+
+The committed preflight manifest is
+`dev/experiments/statehead-nanochat-fused-cuda-preflight-v1.yaml`. On an already
+provisioned H100 checkout, the next correctness command is:
+
+```bash
+NANOCHAT_DTYPE=float32 python -m pytest tests/test_statehead.py -q
+```
+
 The remaining same-day continuation entries are recorded newest-first: paid-run
 capacity attempt, controlled paired-run preparation, eight-H100 DDP preflight,
 then the earlier batch-32 capacity probe.

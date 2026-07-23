@@ -240,6 +240,15 @@ class Float8LinearConfig:
         return Float8LinearConfig()
 
 
+def is_float8_linear_eligible(mod, _fqn=""):
+    """Winner-matching filter for tensorwise FP8 training on large GEMMs."""
+    if not isinstance(mod, nn.Linear):
+        return False
+    if mod.in_features % 16 != 0 or mod.out_features % 16 != 0:
+        return False
+    return min(mod.in_features, mod.out_features) >= 128
+
+
 def convert_to_float8_training(module, *, config=None, module_filter_fn=None):
     """Replace nn.Linear layers with Float8Linear throughout a module.
 
