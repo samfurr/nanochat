@@ -33,7 +33,7 @@ __device__ __forceinline__ float sigmoidf(float value) {
 }
 
 __device__ __forceinline__ float fast_tanhf(float value) {
-  return 2.0f * sigmoidf(2.0f * value) - 1.0f;
+  return __tanhf(value);
 }
 
 template <typename scalar_t>

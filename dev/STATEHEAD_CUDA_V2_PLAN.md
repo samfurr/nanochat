@@ -372,3 +372,8 @@ values are stored in BF16 for the production path, the hypothesis is that the
 extra transcendental precision is not observable after storage while the SFU
 work becomes cheaper. FP32 forward/gradient tolerances remain a hard gate; any
 parity failure or full-step regression requires an immediate revert.
+
+The algebraic-tanh v10 probe passed 49 focused tests in both FP32 and BF16 but
+measured 940,096 tok/s, 0.92% below the same-host v4 control. The v10b
+follow-up retains `__expf` for sigmoid but uses CUDA's direct `__tanhf`
+intrinsic instead of expressing tanh through sigmoid.
