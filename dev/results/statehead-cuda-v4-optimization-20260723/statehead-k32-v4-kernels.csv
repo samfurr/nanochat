@@ -1,0 +1,108 @@
+
+NOTICE: Existing SQLite export found: /root/statehead-k32-v4-bias.sqlite
+        It is assumed file was previously exported from: /root/statehead-k32-v4-bias.nsys-rep
+        Consider using --force-export=true if needed.
+
+Processing [/root/statehead-k32-v4-bias.sqlite] with [/opt/nvidia/nsight-compute/2025.3.1/host/target-linux-x64/reports/cuda_gpu_kern_sum.py]... 
+Time (%),Total Time (ns),Instances,Avg (ns),Med (ns),Min (ns),Max (ns),StdDev (ns),Name
+16.1,55010192,150,366734.6,124496.0,69088,4179590,724595.7,nvjet_tst_192x192_64x3_2x1_v_bz_coopB_NNN
+9.6,32743887,120,272865.7,269968.5,114272,438977,155490.0,nvjet_tst_192x192_64x4_2x1_v_bz_coopB_TNN
+8.3,28374918,60,472915.3,473953.0,463425,483201,7744.0,"void <unnamed>::statehead_activate_gates_kernel<c10::BFloat16>(const T1 *, const T1 *, T1 *, long, long)"
+7.9,26875747,60,447929.1,448049.0,445057,450881,1323.1,"void <unnamed>::statehead_backward_chunk_grad_kernel<c10::BFloat16>(const T1 *, const float *, const float *, const T1 *, T1 *, long, long, long, long, long)"
+6.7,22960349,60,382672.5,382880.5,376032,388641,2827.2,nvjet_tst_192x192_64x3_2x1_v_bz_coopB_splitK_NTN
+6.6,22484223,5,4496844.6,4497351.0,4479622,4507366,11094.8,nvjet_tst_192x192_64x4_1x2_h_bz_coopB_TNN
+6.3,21586784,30,719559.5,69168.0,65216,4022630,1481023.5,nvjet_tst_256x128_64x4_1x2_h_bz_coopA_NTT
+5.6,19212123,5,3842424.6,3819269.0,3708293,4042822,122829.3,triton_red_fused__log_softmax__log_softmax_backward_data__to_copy__unsafe_view_div_mul_nll_loss_backward_nll_loss_forward_tanh_tanh_backward_view_0
+5.6,19004986,5,3800997.2,3808133.0,3635333,3946309,112355.0,triton_red_fused__log_softmax__to_copy__unsafe_view_div_mul_prepare_softmax_online_tanh_view_22
+3.4,11695377,60,194923.0,195312.5,191616,200545,2103.8,"void <unnamed>::statehead_output_kernel<c10::BFloat16>(const T1 *, const float *, T1 *, long, long, long, long, long, long)"
+2.4,8317677,60,138628.0,138672.0,136864,140640,873.8,"void <unnamed>::statehead_chunk_summary_kernel<c10::BFloat16>(const T1 *, float *, float *, long, long, long, long, long, long)"
+2.3,7980107,60,133001.8,133120.5,130688,137408,1543.9,triton_red_fused_sum_6
+2.2,7409036,60,123483.9,123392.5,122368,124768,525.8,"void <unnamed>::statehead_backward_chunk_summary_kernel<c10::BFloat16>(const T1 *, const T1 *, float *, float *, long, long, long, long, long)"
+2.0,6667339,60,111122.3,111696.5,105760,114080,2209.9,nvjet_tst_192x128_64x5_4x2_h_bz_coopB_splitK_NTT
+0.8,2717700,5,543540.0,543265.0,541665,544992,1389.7,triton_per_fused__fused_rms_norm_backward__to_copy_add_mul_select_sum_view_19
+0.7,2317828,5,463565.6,463457.0,460705,466113,1937.9,triton_per_fused__fused_rms_norm_backward__to_copy_add_mul_neg_select_sum_view_15
+0.6,2010658,5,402131.6,402176.0,401760,402369,225.0,triton_per_fused__fused_rms_norm_backward__to_copy_add_mul_select_view_10
+0.6,1991779,5,398355.8,398433.0,397697,398784,458.1,triton_per_fused__fused_rms_norm_backward__to_copy_add_mul_select_view_16
+0.5,1873827,5,374765.4,375777.0,368161,379905,4369.9,triton_per_fused__fused_rms_norm_backward_add_mul_select_sum_view_18
+0.5,1863586,5,372717.2,373729.0,368032,375521,2845.8,triton_per_fused__fused_rms_norm_backward_add_mul_select_sum_view_12
+0.5,1641347,75,21884.6,21920.0,20096,23105,747.0,nvjet_tst_256x128_64x4_1x2_h_bz_coopA_NNT
+0.5,1561443,5,312288.6,312544.0,304865,317024,5056.8,triton_per_fused__fused_rms_norm_backward__to_copy_add_mul_select_sum_view_22
+0.4,1477473,5,295494.6,295456.0,294528,296193,639.6,triton_per_fused__fused_rms_norm_backward__to_copy_add_mul_select_view_14
+0.4,1409091,150,9393.9,1696.0,1472,233985,41564.1,triton_poi_fused_add_copy__div_lerp_mul_neg_pow_rsub_sqrt_0
+0.3,1070977,5,214195.4,214592.0,211584,216704,1874.4,triton_per_fused__fused_rms_norm_backward__to_copy__unsafe_view_add_embedding_dense_backward_mul_nll_loss_forward_sigmoid_slice_slice_backward_view_30
+0.3,1055137,10,105513.7,105632.0,41216,169472,66929.5,triton_per_fused__to_copy_clamp_min_copy__div_lerp_linalg_vector_norm_mul_rsub_2
+0.3,1030593,5,206118.6,208225.0,197728,213056,7103.8,triton_per_fused__to_copy__unsafe_view_add_cat_mean_mul_pow_rsqrt_select_sigmoid_slice_4
+0.3,981762,5,196352.4,196544.0,195808,196736,376.6,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_sub_20
+0.3,969794,5,193958.8,194176.0,193408,194529,518.7,triton_per_fused__fused_rms_norm_backward_add_mul_select_view_20
+0.3,964035,20,48201.8,47936.0,19840,77152,28145.7,"void at::native::<unnamed>::CatArrayBatchedCopy_alignedK_contig<at::native::<unnamed>::OpaqueType<(unsigned int)4>, unsigned int, (int)2, (int)128, (int)1, (int)16>(T1 *, at::native::<unnamed>::CatArrInputTensorMetadata<T1, T2, T4, T5>, at::native::<unnamed>::TensorSizeStride<T2, (unsigned int)4>, int, T2)"
+0.3,961505,5,192301.0,192449.0,191392,192704,518.8,triton_per_fused__fused_rms_norm_backward_add_mul_select_view_11
+0.3,960834,5,192166.8,192288.0,191393,192704,502.4,triton_per_fused__fused_rms_norm_backward_add_mul_select_view_21
+0.3,960514,5,192102.8,192320.0,191425,192416,405.4,triton_per_fused__fused_rms_norm_backward_add_mul_select_view_17
+0.3,947937,60,15799.0,15792.0,15040,16768,373.6,"void <unnamed>::statehead_chunk_boundary_kernel<c10::BFloat16>(const float *, const float *, const T1 *, float *, T1 *, long, long, long, long)"
+0.2,836992,5,167398.4,167360.0,166880,168128,545.6,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_19
+0.2,832418,5,166483.6,166368.0,165952,167361,530.3,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_17
+0.2,831232,5,166246.4,166304.0,165888,166560,256.4,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_15
+0.2,828481,5,165696.2,166081.0,164704,166432,778.1,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_18
+0.2,828161,5,165632.2,165888.0,164385,166208,718.3,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_11
+0.2,827841,5,165568.2,165760.0,164545,166144,605.5,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_14
+0.2,826881,5,165376.2,165409.0,165056,165664,220.6,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_10
+0.2,823490,5,164698.0,164737.0,164032,165568,583.5,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_12
+0.2,821378,5,164275.6,164608.0,163137,165056,829.8,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_16
+0.2,819137,5,163827.4,163808.0,163616,164064,159.4,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_13
+0.2,792257,125,6338.1,5312.0,3040,8320,1561.8,"void cublasLt::splitKreduce_kernel<(int)32, (int)16, int, float, __nv_bfloat16, float, __nv_bfloat16, (bool)0, float, __nv_bfloat16, __nv_bfloat16, (bool)1, (bool)0, (bool)0>(cublasLt::cublasSplitKParams<T6>, const T4 *, const T10 *, T9 *, T5 *, const T6 *, const T6 *, const T11 *, const T4 *, T11 *, void *, long, T6 *, int *, T6 *, T6 *, const T6 *, const T6 *, const T6 *, const T6 *, const T6 *)"
+0.2,783266,60,13054.4,13024.0,12640,13792,253.6,"void <unnamed>::statehead_backward_chunk_boundary_kernel<c10::BFloat16>(const float *, const float *, const T1 *, float *, T1 *, long, long, long)"
+0.2,763169,5,152633.8,152704.0,151520,153568,759.7,triton_per_fused__fused_rms_norm_backward__to_copy_mul_neg_sum_view_2
+0.2,753920,10,75392.0,75536.0,28992,121824,48526.5,triton_poi_fused__to_copy_add_clamp_min_copy__div_ge_lerp_linalg_vector_norm_mean_mul_pow_reciprocal_rsqrt_rsub_sqrt_sub_17
+0.2,699489,5,139897.8,140000.0,138304,140833,1043.9,triton_per_fused__to_copy__unsafe_view_add_mean_mul_pow_rsqrt_select_9
+0.2,588768,5,117753.6,117536.0,117344,118848,616.9,triton_poi_fused__to_copy_add_copy_copy__div_lerp_mul_neg_pow_rsub_sqrt_0
+0.2,580962,15,38730.8,28896.0,27520,60641,15153.6,"void at::native::<unnamed>::multi_tensor_apply_kernel<at::native::<unnamed>::TensorListMetadata<(int)2>, at::native::<unnamed>::UnaryOpFunctor<float, (int)2, (int)1, (int)1>, at::native::Copy<float, float>>(T1, T2, T3...)"
+0.2,579330,115,5037.7,5024.0,4704,6112,209.4,triton_red_fused_mul_sum_13
+0.2,577089,10,57708.9,57408.0,22016,93696,37429.3,triton_poi_fused_add_div_linalg_vector_norm_mul_10
+0.2,548320,10,54832.0,54560.0,22528,88128,33695.6,triton_red_fused__to_copy_lerp_linalg_vector_norm_rsub_0
+0.2,542913,25,21716.5,21856.0,20512,22560,606.5,nvjet_tst_256x128_64x4_1x2_h_bz_coopA_TNT
+0.2,533664,5,106732.8,107392.0,104768,108320,1631.0,triton_per_fused__to_copy_add_embedding_mean_pow_rsqrt_0
+0.1,457600,10,45760.0,45408.0,16576,75200,30602.8,triton_poi_fused_add_div_linalg_vector_norm_mul_8
+0.1,405248,60,6754.1,6688.0,6464,8384,320.9,triton_poi_fused__to_copy_t_5
+0.1,386945,10,38694.5,38496.0,16064,61376,23260.3,triton_per_fused__to_copy_add_clamp_min_linalg_vector_norm_mean_mul_pow_reciprocal_15
+0.1,377152,10,37715.2,37680.0,12128,63456,26708.9,triton_red_fused__to_copy_add_linalg_vector_norm_mul_14
+0.1,360034,5,72006.8,72032.0,71616,72288,272.9,triton_red_fused__to_copy_mul_slice_sum_24
+0.1,333856,10,33385.6,33152.0,10784,56352,23672.2,triton_poi_fused_add_div_linalg_vector_norm_mul_6
+0.1,329280,10,32928.0,32656.0,9952,56096,24066.0,triton_poi_fused_add_mul_12
+0.1,267296,60,4454.9,4208.0,4032,5184,369.4,triton_poi_fused__to_copy_8
+0.1,252544,5,50508.8,50240.0,49824,51360,752.0,triton_poi_fused__to_copy_t_21
+0.1,243424,5,48684.8,48320.0,48160,49472,598.9,triton_poi_fused_embedding_dense_backward_31
+0.1,241824,10,24182.4,24192.0,9472,39200,15024.4,triton_poi_fused_add_div_linalg_vector_norm_mul_4
+0.1,241024,5,48204.8,48352.0,47520,48608,440.9,triton_poi_fused__to_copy_1
+0.0,156000,60,2600.0,2560.0,2432,3392,159.8,triton_poi_fused__to_copy_t_8
+0.0,152032,5,30406.4,30304.0,30240,30848,255.4,triton_poi_fused_embedding_dense_backward_29
+0.0,150912,60,2515.2,2496.0,2400,2720,68.5,triton_per_fused__to_copy_sum_view_7
+0.0,137376,10,13737.6,13568.0,5888,21568,8041.4,triton_red_fused_linalg_vector_norm_3
+0.0,116449,60,1940.8,1776.0,1696,2464,247.6,triton_poi_fused__to_copy_4
+0.0,108257,60,1804.3,1792.0,1664,2112,97.2,triton_per_fused__to_copy_squeeze_sum_9
+0.0,87233,60,1453.9,1440.0,1280,2080,125.9,triton_poi_fused__to_copy__unsafe_view_clone_expand_statehead_scan_forward_unsqueeze_view_6
+0.0,82880,10,8288.0,8208.0,8000,9056,312.4,triton_poi_fused_add_mul_13
+0.0,82464,60,1374.4,1344.0,1312,1536,64.4,triton_poi_fused__to_copy__unsafe_view_clone_expand_statehead_scan_forward_unsqueeze_view_7
+0.0,81792,10,8179.2,8176.0,7840,8544,215.6,triton_poi_fused_add_mul_7
+0.0,81216,10,8121.6,8000.0,7840,8704,322.1,triton_poi_fused_add_mul_5
+0.0,81025,10,8102.5,8032.5,7808,8576,224.1,triton_poi_fused_add_mul_11
+0.0,79744,10,7974.4,7968.0,7776,8160,111.7,triton_poi_fused_add_mul_9
+0.0,66048,5,13209.6,13216.0,13120,13312,76.4,triton_red_fused__log_softmax__to_copy__unsafe_view_div_mul_nll_loss_forward_sub_tanh_view_23
+0.0,61184,60,1019.7,992.0,992,1280,52.2,triton_poi_fused_statehead_scan_backward_view_zeros_5
+0.0,47744,5,9548.8,9568.0,8928,9984,400.1,void cutlass::Kernel2<cutlass_75_tensorop_bf16_s1688gemm_bf16_64x64_nn_align1>(T1::Params)
+0.0,38976,5,7795.2,7872.0,7520,7968,173.2,triton_red_fused__to_copy__unsafe_view_mul_sigmoid_sigmoid_backward_sum_25
+0.0,38304,30,1276.8,1280.0,1216,1376,40.6,triton_per_fused__to_copy_lerp_linalg_vector_norm_rsub_1
+0.0,30784,5,6156.8,6240.0,5824,6400,224.7,nvjet_tst_64x8_64x16_1x1_v_bz_splitK_NNT
+0.0,26880,5,5376.0,5440.0,5184,5568,156.8,nvjet_tst_512x8_64x3_2x1_v_bz_TNT
+0.0,26272,5,5254.4,5248.0,5184,5312,47.5,triton_poi_fused__to_copy_clone_mul_slice_2
+0.0,24704,5,4940.8,4928.0,4800,5120,123.1,triton_red_fused__fused_rms_norm_backward__to_copy_mul_neg_sum_view_3
+0.0,14720,10,1472.0,1440.0,1376,1632,88.0,triton_poi_fused__to_copy_add_select_backward_23
+0.0,13472,5,2694.4,2688.0,2592,2880,118.4,triton_red_fused__to_copy_add_clamp_min_copy__div_lerp_linalg_vector_norm_mean_mul_pow_reciprocal_rsqrt_rsub_sqrt_sum_16
+0.0,11297,5,2259.4,2272.0,2208,2336,53.3,triton_poi_fused__to_copy__unsafe_view_clone_mul_slice_3
+0.0,10240,5,2048.0,2048.0,1920,2176,101.2,triton_per_fused__to_copy_add_clamp_min_copy__div_lerp_linalg_vector_norm_mean_mul_pow_reciprocal_rsqrt_rsub_sqrt_sum_16
+0.0,7840,5,1568.0,1568.0,1408,1728,115.4,triton_poi_fused__to_copy__unsafe_view_mul_sigmoid_sigmoid_backward_view_27
+0.0,6336,5,1267.2,1248.0,1216,1344,48.5,triton_poi_fused__to_copy_t_1
+0.0,5696,5,1139.2,1152.0,1120,1152,17.5,triton_per_fused__log_softmax__to_copy__unsafe_view_div_mul_nll_loss_forward_sub_tanh_view_24
+0.0,5632,5,1126.4,1120.0,1088,1152,26.8,triton_per_fused__to_copy__unsafe_view_mul_sigmoid_sum_view_26
+0.0,5536,5,1107.2,1120.0,1088,1120,17.5,triton_poi_fused__to_copy_28
+0.0,5408,5,1081.6,1056.0,1024,1184,61.6,"void at::native::vectorized_elementwise_kernel<(int)4, at::native::FillFunctor<float>, std::array<char *, (unsigned long)1>>(int, T2, T3)"
+

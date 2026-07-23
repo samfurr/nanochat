@@ -1252,3 +1252,57 @@ Full evidence, limitations, checksums, commands, and the exact next command:
 ```text
 dev/results/statehead-cuda-v2-gate-20260723/REPORT.md
 ```
+
+## 2026-07-23 — StateHead CUDA v4 activation-cache optimization
+
+Commits `ad9f5ef` and `c8847dc` cache gate activations once for reuse across
+the CUDA recurrence and fold gate bias into that activation pass. The
+Transformer baseline was not changed. The final source at `efd0ca5` is
+identical to accepted v4 for the relevant code because the two later probes
+were each reverted after measurement.
+
+On one same-host 700 W H100 SXM, compiled BF16
+d12/768/T2048/batch-32 fixed-synthetic-batch training measured:
+
+| Mode | Median tok/s | Median step | Peak allocated |
+|---|---:|---:|---:|
+| CUDA v2, chunk 32 | 830,413 | 78.92 ms | 13.15 GiB |
+| CUDA v3, activation cache | 895,727 | 73.17 ms | 13.15 GiB |
+| **CUDA v4, cache + fused bias** | **938,891** | **69.80 ms** | **13.15 GiB** |
+| compiled PyTorch StateHead | 608,102 | 107.77 ms | 36.43 GiB |
+| GPT/verified FA3 | 519,371 | 126.18 ms | 27.40 GiB |
+
+CUDA v4 is 13.06% faster than same-host CUDA v2, 54.40% faster than compiled
+PyTorch StateHead, and 80.78% faster than GPT/FA3. This is 1.808x GPT, not 2x.
+It needs approximately another 10.63% throughput or 6.71 ms/step to reach 2x.
+
+Nsight Systems attributed 5.675 ms/step to the remaining standalone activation
+kernel. The activation cache reduced all custom StateHead CUDA work from
+23.924 to 16.810 ms/step; folding bias removed a separate 3.176 ms/step
+compiled pointwise kernel. A flat-indexing cleanup was neutral (-0.02%) and a
+forward-summary activation fusion was slower (-1.80%); both were reverted.
+
+CUDA 12.8 compilation, FP32 (89 passed), BF16 (87 passed plus two known
+unrelated CPU GPT/FA3 failures), focused probe suites (45 passed each),
+compiled full-model parity, a five-step finite-gradient CUDA check, local
+StateHead tests (53 passed, 36 skipped), and a five-step BF16/MPS smoke passed.
+Dataset learning parity, native FP8, and eight-GPU DDP remain untested.
+
+The productive Vast instance ran for about 42.65 minutes at $3.4817/hour.
+Including three short failed startups, estimated spend was about $3.10 under
+the approved $10 ceiling. All instances were destroyed and the final account
+audit returned zero active instances.
+
+The next optimization is a separately revertible CUDA-native gate projection
+or CUTLASS-style mixed sigmoid/tanh epilogue. It must retain tensor-core GEMM
+throughput, the interleaved gate layout, and FP32 recurrence state. Removing
+all measured activation time would theoretically reach about 1.97x GPT, so a
+production K32/Dh128 specialization or another roughly 1 ms saving would
+still be needed for 2x.
+
+Full evidence, profiles, rejected probes, command ledger, unresolved questions,
+and checksums:
+
+```text
+dev/results/statehead-cuda-v4-optimization-20260723/REPORT.md
+```

@@ -1,0 +1,5 @@
+==PROF== Connected to process 3456 (/.uv/python_install/cpython-3.10.20-linux-x86_64-gnu/bin/python3.10)
+==PROF== Connected to process 3532 (/.uv/python_install/cpython-3.10.20-linux-x86_64-gnu/bin/python3.10)
+==ERROR== ERR_NVGPUCTRPERM - The user does not have permission to access NVIDIA GPU Performance Counters on the target device 0. For instructions on enabling permissions and to get more information see https://developer.nvidia.com/ERR_NVGPUCTRPERM
+==PROF== Disconnected from process 3532
+==PROF== Disconnected from process 3456

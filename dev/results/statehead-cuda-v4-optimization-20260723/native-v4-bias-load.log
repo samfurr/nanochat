@@ -1,0 +1,10 @@
+[1/3] c++ -MMD -MF statehead_cuda.o.d -DTORCH_EXTENSION_NAME=nanochat_statehead_cuda_ext -DTORCH_API_INCLUDE_EXTENSION_H -isystem /root/nanochat/.venv/lib/python3.10/site-packages/torch/include -isystem /root/nanochat/.venv/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -isystem /.uv/python_install/cpython-3.10-linux-x86_64-gnu/include/python3.10 -fPIC -std=c++17 -O3 -c /root/nanochat/nanochat/csrc/statehead_cuda.cpp -o statehead_cuda.o 
+[2/3] /usr/local/cuda-12.8/bin/nvcc --generate-dependencies-with-compile --dependency-output statehead_cuda_kernel.cuda.o.d -DTORCH_EXTENSION_NAME=nanochat_statehead_cuda_ext -DTORCH_API_INCLUDE_EXTENSION_H -isystem /root/nanochat/.venv/lib/python3.10/site-packages/torch/include -isystem /root/nanochat/.venv/lib/python3.10/site-packages/torch/include/torch/csrc/api/include -isystem /usr/local/cuda-12.8/include -isystem /.uv/python_install/cpython-3.10-linux-x86_64-gnu/include/python3.10 -D__CUDA_NO_HALF_OPERATORS__ -D__CUDA_NO_HALF_CONVERSIONS__ -D__CUDA_NO_BFLOAT16_CONVERSIONS__ -D__CUDA_NO_HALF2_OPERATORS__ --expt-relaxed-constexpr -gencode=arch=compute_90,code=compute_90 -gencode=arch=compute_90,code=sm_90 --compiler-options '-fPIC' -O3 -lineinfo -std=c++17 -c /root/nanochat/nanochat/csrc/statehead_cuda_kernel.cu -o statehead_cuda_kernel.cuda.o 
+/root/nanochat/nanochat/csrc/statehead_cuda_kernel.cu(509): warning #177-D: variable "total_states" was declared but never referenced
+    const int64_t total_states = batch * n_head * head_dim;
+                  ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+[3/3] c++ statehead_cuda.o statehead_cuda_kernel.cuda.o -shared -L/root/nanochat/.venv/lib/python3.10/site-packages/torch/lib -lc10 -lc10_cuda -ltorch_cpu -ltorch_cuda -ltorch -ltorch_python -L/usr/local/cuda-12.8/lib64 -lcudart -o nanochat_statehead_cuda_ext.so
+loaded nanochat_statehead_cuda_ext

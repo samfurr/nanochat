@@ -239,3 +239,44 @@ The first code change is Stage B only: replace the serial all-chunk backward
 kernel with parallel chunk summaries, a reverse chunk-boundary scan, and
 parallel local chunk-gradient kernels. Keep the forward, public Python API,
 gate layout, checkpoint layout, and Transformer baseline unchanged.
+
+## 2026-07-23 CUDA v4 execution update
+
+The bounded one-H100 optimization pass completed the first useful part of
+Stage D and refined Stage E:
+
+- CUDA v3 caches sigmoid/tanh gate activations once instead of recalculating
+  them in every recurrence kernel.
+- CUDA v4 folds gate bias into that activation pass, eliminating the external
+  compiled pointwise bias-add materialization.
+- CUDA v4 reached 938,891 median full-step tok/s at
+  d12/768/T2048/batch-32 BF16, 13.06% above same-host CUDA v2 chunk 32,
+  54.40% above compiled PyTorch StateHead, and 80.78% above GPT/FA3.
+- Peak allocation remained 13.15 GiB.
+- FP32 and BF16 CUDA numerical/gradient suites, partial chunks, sequence 2048,
+  fullgraph compilation, compiled full-model parity, and a final finite-gradient
+  smoke passed.
+- Dataset learning parity, FP8, and eight-GPU DDP remain open.
+
+Two probes were measured and explicitly reverted. Removing flat indexing was
+neutral at -0.02%. Fusing activation into forward summary generation was 1.80%
+slower because it reduced activation parallelism and still needed the cache for
+other passes.
+
+Nsight Systems shows the standalone activation pass is now the largest
+isolated opportunity at 5.675 ms/step. The next separately revertible probe is
+a tensor-core gate projection with a custom mixed sigmoid/tanh output epilogue
+that emits the existing interleaved gate layout. Keep v4 as the correctness
+fallback and recurrence state FP32. If the full activation pass disappeared,
+the theoretical step would be about 64.13 ms, or 1.97x the measured GPT
+control; another roughly 1 ms would still be needed to exceed 2x GPT.
+
+Do not retry the rejected forward-summary fusion unchanged. Do not advance
+FP8 or a full training run until the projection/activation probe passes the
+existing parity gates and a short dataset-backed learning-parity comparison.
+
+Full report, profiles, tests, rejected probes, cost, commands, and checksums:
+
+```text
+dev/results/statehead-cuda-v4-optimization-20260723/REPORT.md
+```
