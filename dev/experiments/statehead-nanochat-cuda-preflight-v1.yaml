@@ -1,4 +1,5 @@
 experiment_id: statehead-nanochat-cuda-preflight-v1
+status: complete
 purpose: infrastructure_feasibility_only
 scientific_result: false
 repo_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
@@ -42,3 +43,18 @@ success_criteria:
   - two_optimizer_steps_complete
   - peak_vram_recorded
 checkpoint_selection: none
+result:
+  artifact: dev/results/statehead-nanochat-cuda-preflight-v1.json
+  process_exit_zero: true
+  finite_loss_and_gradients: true
+  optimizer_steps_completed: 2
+  first_step_including_compile_seconds: 55.75203488022089
+  steady_step_seconds: 0.018427319824695587
+  steady_global_tokens_per_second: 111139.33113894018
+  peak_allocated_bytes: 2310125568
+  peak_reserved_bytes: 3634364416
+  parameter_checksum_spread: 0.0
+  json_sha256: 51e7f680b56e83341f81a02b9fc2a6489e6dd32effbb67c045b062c706155d0f
+  raw_log_sha256: 3fa716cd10d27d5fb4423889d9f8280b4286bb21399ea52b561c803f6391d151
+  observed_balance_delta_usd: 0.1097006583
+  pod_deleted: true

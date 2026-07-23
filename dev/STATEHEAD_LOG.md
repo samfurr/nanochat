@@ -457,3 +457,98 @@ rg -n "total = wte" nanochat/statehead.py && sed -n '210,245p' nanochat/statehea
 ```
 
 The first five RunPod API commands initially failed inside the network-restricted sandbox with DNS resolution errors and were immediately repeated with approved network access; the repeated commands succeeded.
+
+## 2026-07-22 — bounded one-H100 CUDA preflight
+
+The explicitly approved infrastructure-only preflight ran on one Secure Cloud
+`NVIDIA H100 80GB HBM3` pod at `$2.99/hour`. The pod had a hard 30-minute
+termination deadline and was manually deleted immediately after the artifacts were
+retrieved. RunPod reported no remaining pods and `$0/hour` afterward. The observed
+account-balance delta was approximately `$0.11`.
+
+Environment:
+
+```text
+model code commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+checked-out branch head: 39548ab5508b6937e87c48ecd6ab4f6e1a520b9c
+image: runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404
+GPU: NVIDIA H100 80GB HBM3, 81,559 MiB reported
+driver: 570.195.03
+Python: 3.12.3
+PyTorch: 2.9.1+cu128
+CUDA runtime: 12.8
+precision: BF16 activations, FP32 scan accumulation
+world/device batch/sequence: 1 / 1 / 2,048
+compile: true
+synthetic fixed token row: true
+```
+
+Result:
+
+```text
+process exit: 0
+finite loss and gradients: yes
+optimizer steps: 2
+step 0, including compilation: 55.75203488022089 s, loss 10.398395538330078
+step 1, steady shape: 0.018427319824695587 s, loss 5.794830322265625
+steady global throughput: 111,139.33113894018 tokens/s
+peak allocated VRAM: 2,310,125,568 bytes (2.151 GiB)
+peak reserved VRAM: 3,634,364,416 bytes (3.385 GiB)
+parameter checksum spread: 0.0 (trivial one-rank check)
+```
+
+The loss change is only a synthetic repeated-row optimizer sanity check. This run
+does not test dataset learning, multi-rank optimizer communication, GPT parity,
+validation BPB, CORE, or speedrun performance. No parity claim is made.
+
+Artifacts:
+
+- `dev/results/statehead-nanochat-cuda-preflight-v1.json`
+- retrieved raw JSON SHA-256: `51e7f680b56e83341f81a02b9fc2a6489e6dd32effbb67c045b062c706155d0f`
+- retrieved raw log SHA-256: `3fa716cd10d27d5fb4423889d9f8280b4286bb21399ea52b561c803f6391d151`
+
+The raw log also contained a benign warning that NumPy was not installed in the
+prebuilt container. The probe itself does not use NumPy.
+
+### CUDA preflight command ledger
+
+```bash
+sed -n '1,240p' /Users/haybales/.agents/skills/runpod/SKILL.md && sed -n '1,220p' /Users/haybales/.agents/skills/runpod-usage/reference/pod-workflows.md
+sed -n '1,320p' /Users/haybales/.agents/skills/runpodctl/SKILL.md && sed -n '1,280p' /Users/haybales/.agents/skills/runpod/golden-paths/06-dev-pod.md
+date -u -v+30M '+%Y-%m-%dT%H:%M:%SZ'
+runpodctl version
+runpodctl user
+runpodctl pod list --all
+runpodctl pod create --help
+runpodctl pod create --name statehead-cuda-preflight-v1 --image runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404 --gpu-id "NVIDIA H100 80GB HBM3" --gpu-count 1 --cloud-type SECURE --container-disk-in-gb 30 --ports "22/tcp" --ssh --terminate-after 2026-07-23T02:04:45Z
+runpodctl pod get 219undjfa90mm8
+runpodctl ssh info 219undjfa90mm8
+ssh -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -p 10508 root@216.243.220.202 'hostname; nvidia-smi -L; python --version; python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available(), torch.cuda.device_count())"; df -h /workspace'
+ssh -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10508 root@216.243.220.202 'git clone --branch codex/statehead-nanochat --depth 1 https://github.com/samfurr/nanochat.git /workspace/nanochat'
+ssh -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10508 root@216.243.220.202 'cd /workspace/nanochat && git rev-parse HEAD && git status --short && bash -n runs/statehead_cuda_preflight.sh && python -c "import filelock, torch; print(filelock.__version__, torch.__version__)"'
+ssh -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p 10508 root@216.243.220.202 'cd /workspace/nanochat && NANOCHAT_REPO_COMMIT=2944ed65dfb26809073e7b3446ff6255513c83d4 NPROC_PER_NODE=1 DEVICE_BATCH_SIZE=1 PREFLIGHT_STEPS=2 RESULTS_DIR=/workspace/statehead-preflight-results bash runs/statehead_cuda_preflight.sh'
+scp -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P 10508 root@216.243.220.202:/workspace/statehead-preflight-results/statehead-d12-b1-w1.json /private/tmp/statehead-d12-b1-w1.json
+scp -i /Users/haybales/.runpod/ssh/runpodctl-ssh-key -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P 10508 root@216.243.220.202:/workspace/statehead-preflight-results/statehead-d12-b1-w1.log /private/tmp/statehead-d12-b1-w1.log
+.venv/bin/python -c '<validate retrieved JSON fields and print key metrics>' && shasum -a 256 /private/tmp/statehead-d12-b1-w1.json /private/tmp/statehead-d12-b1-w1.log && wc -c /private/tmp/statehead-d12-b1-w1.json /private/tmp/statehead-d12-b1-w1.log
+runpodctl pod delete 219undjfa90mm8
+runpodctl pod list --all
+runpodctl user
+sed -n '1,260p' /private/tmp/statehead-d12-b1-w1.json && sed -n '1,260p' /private/tmp/statehead-d12-b1-w1.log
+```
+
+Post-retrieval local verification:
+
+```text
+result JSON byte-for-byte SHA-256 match: passed
+result/manifest consistency assertions: passed
+focused StateHead suite: 42 passed in 2.38s
+full suite excluding known macOS memory-limit test: 85 passed, 14 skipped, 1 deselected in 4.90s
+diff check, compileall, and unchanged nanochat/gpt.py assertion: passed
+```
+
+```bash
+.venv/bin/python -c '<assert result JSON and both manifests are consistent>' && shasum -a 256 dev/results/statehead-nanochat-cuda-preflight-v1.json /private/tmp/statehead-d12-b1-w1.json
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest tests/test_statehead.py -q
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
+git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git status --short
+```
