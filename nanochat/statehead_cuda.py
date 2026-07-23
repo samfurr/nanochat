@@ -1,6 +1,6 @@
 """Lazy-built native CUDA implementation of the fused StateHead scan.
 
-The custom kernels fuse gate activations with the recurrent forward/reverse
+The custom kernels cache gate activations once for the recurrent forward/reverse
 scan. Large gate and output projections remain regular GEMMs, and every state
 transition is accumulated in float32 even when gates and outputs are bfloat16.
 """
@@ -51,7 +51,7 @@ def _load_extension(verbose: bool | None = None):
 
 @torch.library.custom_op("nanochat::statehead_scan_backward", mutates_args=())
 def _statehead_scan_backward(
-    gates: torch.Tensor,
+    activated_gates: torch.Tensor,
     chunk_initials: torch.Tensor,
     grad_y: torch.Tensor,
     grad_final_state: torch.Tensor,
@@ -59,7 +59,7 @@ def _statehead_scan_backward(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     return tuple(
         _load_extension().backward(
-            gates,
+            activated_gates,
             chunk_initials,
             grad_y,
             grad_final_state,
@@ -70,14 +70,14 @@ def _statehead_scan_backward(
 
 @_statehead_scan_backward.register_fake
 def _statehead_scan_backward_fake(
-    gates: torch.Tensor,
+    activated_gates: torch.Tensor,
     chunk_initials: torch.Tensor,
     grad_y: torch.Tensor,
     grad_final_state: torch.Tensor,
     chunk_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     del chunk_initials, grad_y, chunk_size
-    return torch.empty_like(gates), torch.empty_like(grad_final_state)
+    return torch.empty_like(activated_gates), torch.empty_like(grad_final_state)
 
 
 @torch.library.custom_op("nanochat::statehead_scan_forward", mutates_args=())
@@ -85,7 +85,7 @@ def _statehead_scan_forward(
     gates: torch.Tensor,
     initial_state: torch.Tensor,
     chunk_size: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     return tuple(_load_extension().forward(gates, initial_state, chunk_size))
 
 
@@ -94,7 +94,7 @@ def _statehead_scan_forward_fake(
     gates: torch.Tensor,
     initial_state: torch.Tensor,
     chunk_size: int,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     batch, sequence_len, four, n_head, head_dim = gates.shape
     torch._check(four == 4)
     torch._check(initial_state.shape == (batch, n_head, head_dim))
@@ -103,26 +103,39 @@ def _statehead_scan_forward_fake(
     chunk_initials = gates.new_empty(
         (batch, n_chunks, n_head, head_dim), dtype=torch.float32
     )
-    return output, torch.empty_like(initial_state), chunk_initials
+    return (
+        output,
+        torch.empty_like(initial_state),
+        chunk_initials,
+        torch.empty_like(gates),
+    )
 
 
 def _setup_forward_context(ctx, inputs, output):
-    gates, _initial_state, chunk_size = inputs
-    _y, _final_state, chunk_initials = output
-    ctx.mark_non_differentiable(chunk_initials)
-    ctx.save_for_backward(gates, chunk_initials)
+    _gates, _initial_state, chunk_size = inputs
+    _y, _final_state, chunk_initials, activated_gates = output
+    ctx.mark_non_differentiable(chunk_initials, activated_gates)
+    ctx.save_for_backward(activated_gates, chunk_initials)
     ctx.chunk_size = chunk_size
 
 
-def _forward_backward(ctx, grad_y, grad_final_state, _grad_chunk_initials):
-    gates, chunk_initials = ctx.saved_tensors
-    batch, sequence_len, _four, n_head, head_dim = gates.shape
+def _forward_backward(
+    ctx,
+    grad_y,
+    grad_final_state,
+    _grad_chunk_initials,
+    _grad_activated_gates,
+):
+    activated_gates, chunk_initials = ctx.saved_tensors
+    batch, sequence_len, _four, n_head, head_dim = activated_gates.shape
     if grad_y is None:
-        grad_y = gates.new_zeros((batch, sequence_len, n_head, head_dim))
+        grad_y = activated_gates.new_zeros(
+            (batch, sequence_len, n_head, head_dim)
+        )
     if grad_final_state is None:
-        grad_final_state = gates.new_zeros((batch, n_head, head_dim))
+        grad_final_state = activated_gates.new_zeros((batch, n_head, head_dim))
     grad_gates, grad_initial_state = _statehead_scan_backward(
-        gates,
+        activated_gates,
         chunk_initials,
         grad_y.contiguous(),
         grad_final_state.contiguous(),
@@ -147,7 +160,7 @@ def statehead_scan_cuda(gates, initial_state, chunk_size=64):
         raise ValueError("native CUDA scan requires 1 <= chunk_size <= 64")
     gates = gates.contiguous()
     initial_state = initial_state.to(dtype=gates.dtype).contiguous()
-    output, final_state, _chunk_initials = _statehead_scan_forward(
+    output, final_state, _chunk_initials, _activated_gates = _statehead_scan_forward(
         gates,
         initial_state,
         chunk_size,

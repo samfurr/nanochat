@@ -138,12 +138,16 @@ def test_native_cuda_fake_dispatch_shapes():
     with FakeTensorMode():
         gates = torch.empty(2, 65, 4, 3, 8, device="cuda", dtype=torch.bfloat16)
         state = torch.empty(2, 3, 8, device="cuda", dtype=torch.bfloat16)
-        y, final_state, chunk_initials = _statehead_scan_forward(gates, state, 64)
+        y, final_state, chunk_initials, activated_gates = _statehead_scan_forward(
+            gates, state, 64
+        )
     assert y.shape == (2, 65, 3, 8)
     assert y.dtype == torch.bfloat16
     assert final_state.shape == state.shape
     assert chunk_initials.shape == (2, 2, 3, 8)
     assert chunk_initials.dtype == torch.float32
+    assert activated_gates.shape == gates.shape
+    assert activated_gates.dtype == gates.dtype
 
 
 def _raw_gate_scan_reference(gates, initial_state):
