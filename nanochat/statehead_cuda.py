@@ -42,7 +42,7 @@ def _load_extension(verbose: bool | None = None):
                 str(source_dir / "statehead_cuda_kernel.cu"),
             ],
             extra_cflags=["-O3"],
-            extra_cuda_cflags=["-O3", "--lineinfo"],
+            extra_cuda_cflags=["-O3", "-lineinfo"],
             with_cuda=True,
             verbose=verbose,
         )
