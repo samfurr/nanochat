@@ -8,6 +8,7 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
 
 #include <algorithm>
 #include <array>
@@ -18,6 +19,14 @@ namespace {
 constexpr int kForwardThreads = 256;
 constexpr int kBackwardThreads = 128;
 constexpr int kMaxChunkSize = 64;
+
+void check_cublas(cublasStatus_t status, const char* operation) {
+  TORCH_CHECK(
+      status == CUBLAS_STATUS_SUCCESS,
+      operation,
+      " failed with cuBLAS status ",
+      static_cast<int>(status));
+}
 
 __device__ __forceinline__ float sigmoidf(float value) {
   return 1.0f / (1.0f + expf(-value));
@@ -464,6 +473,82 @@ std::vector<torch::Tensor> scan_activated_gates(
   return {output, final_state, chunk_initials};
 }
 
+template <typename scalar_t, cudaDataType_t kDataType>
+void project_activate_tiles(
+    const torch::Tensor& x,
+    const torch::Tensor& gate_weight,
+    const torch::Tensor& gate_bias,
+    torch::Tensor& activated_gates,
+    std::array<torch::Tensor, 2>& raw_buffers,
+    const c10::cuda::CUDAStream& projection_stream,
+    const c10::cuda::CUDAStream& activation_stream,
+    const std::array<cudaEvent_t, 2>& projection_done,
+    const std::array<cudaEvent_t, 2>& activation_done,
+    int64_t tile_rows,
+    int64_t total_rows,
+    int64_t n_embd,
+    int64_t output_features,
+    int64_t n_tiles) {
+  for (int64_t tile = 0; tile < n_tiles; ++tile) {
+    const int buffer = static_cast<int>(tile % 2);
+    const int64_t row_start = tile * tile_rows;
+    const int64_t rows = std::min(tile_rows, total_rows - row_start);
+    if (tile >= 2) {
+      C10_CUDA_CHECK(cudaStreamWaitEvent(
+          projection_stream.stream(), activation_done[buffer], 0));
+    }
+    {
+      const c10::cuda::CUDAStreamGuard stream_guard(projection_stream);
+      const auto handle = at::cuda::getCurrentCUDABlasHandle();
+      check_cublas(
+          cublasSetStream(handle, projection_stream.stream()),
+          "cublasSetStream");
+      const float alpha = 1.0f;
+      const float beta = 0.0f;
+      check_cublas(
+          cublasGemmEx(
+              handle,
+              CUBLAS_OP_T,
+              CUBLAS_OP_N,
+              output_features,
+              rows,
+              n_embd,
+              &alpha,
+              gate_weight.data_ptr<scalar_t>(),
+              kDataType,
+              n_embd,
+              x.data_ptr<scalar_t>() + row_start * n_embd,
+              kDataType,
+              n_embd,
+              &beta,
+              raw_buffers[buffer].data_ptr<scalar_t>(),
+              kDataType,
+              output_features,
+              CUBLAS_COMPUTE_32F,
+              CUBLAS_GEMM_DEFAULT_TENSOR_OP),
+          "cublasGemmEx");
+    }
+    C10_CUDA_CHECK(
+        cudaEventRecord(projection_done[buffer], projection_stream.stream()));
+    C10_CUDA_CHECK(cudaStreamWaitEvent(
+        activation_stream.stream(), projection_done[buffer], 0));
+
+    const int64_t gate_states = rows * n_embd;
+    const int gate_blocks = static_cast<int>(
+        (gate_states + kForwardThreads - 1) / kForwardThreads);
+    statehead_activate_gates_kernel<scalar_t>
+        <<<gate_blocks, kForwardThreads, 0, activation_stream.stream()>>>(
+            raw_buffers[buffer].data_ptr<scalar_t>(),
+            gate_bias.data_ptr<scalar_t>(),
+            activated_gates.data_ptr<scalar_t>() + row_start * output_features,
+            gate_states,
+            n_embd);
+    C10_CUDA_KERNEL_LAUNCH_CHECK();
+    C10_CUDA_CHECK(
+        cudaEventRecord(activation_done[buffer], activation_stream.stream()));
+  }
+}
+
 }  // namespace
 
 std::vector<torch::Tensor> statehead_forward_cuda(
@@ -594,58 +679,31 @@ std::vector<torch::Tensor> statehead_forward_projected_cuda(
   C10_CUDA_CHECK(
       cudaStreamWaitEvent(projection_stream.stream(), inputs_ready, 0));
 
-  AT_DISPATCH_FLOATING_TYPES_AND2(
-      at::ScalarType::Half,
-      at::ScalarType::BFloat16,
-      x.scalar_type(),
-      "statehead_forward_projected_cuda",
-      [&] {
-        for (int64_t tile = 0; tile < n_tiles; ++tile) {
-          const int buffer = static_cast<int>(tile % 2);
-          const int64_t row_start = tile * tile_rows;
-          const int64_t rows = std::min(tile_rows, total_rows - row_start);
-          if (tile >= 2) {
-            C10_CUDA_CHECK(cudaStreamWaitEvent(
-                projection_stream.stream(), activation_done[buffer], 0));
-          }
-          {
-            const c10::cuda::CUDAStreamGuard stream_guard(projection_stream);
-            at::cuda::blas::gemm<scalar_t>(
-                't',
-                'n',
-                output_features,
-                rows,
-                n_embd,
-                1.0f,
-                gate_weight.data_ptr<scalar_t>(),
-                n_embd,
-                x.data_ptr<scalar_t>() + row_start * n_embd,
-                n_embd,
-                0.0f,
-                raw_buffers[buffer].data_ptr<scalar_t>(),
-                output_features);
-          }
-          C10_CUDA_CHECK(cudaEventRecord(
-              projection_done[buffer], projection_stream.stream()));
-          C10_CUDA_CHECK(cudaStreamWaitEvent(
-              activation_stream.stream(), projection_done[buffer], 0));
-
-          const int64_t gate_states = rows * n_embd;
-          const int gate_blocks = static_cast<int>(
-              (gate_states + kForwardThreads - 1) / kForwardThreads);
-          statehead_activate_gates_kernel<scalar_t>
-              <<<gate_blocks, kForwardThreads, 0, activation_stream.stream()>>>(
-                  raw_buffers[buffer].data_ptr<scalar_t>(),
-                  gate_bias.data_ptr<scalar_t>(),
-                  activated_gates.data_ptr<scalar_t>() +
-                      row_start * output_features,
-                  gate_states,
-                  n_embd);
-          C10_CUDA_KERNEL_LAUNCH_CHECK();
-          C10_CUDA_CHECK(cudaEventRecord(
-              activation_done[buffer], activation_stream.stream()));
-        }
-      });
+  switch (x.scalar_type()) {
+    case torch::kFloat:
+      project_activate_tiles<float, CUDA_R_32F>(
+          x, gate_weight, gate_bias, activated_gates, raw_buffers,
+          projection_stream, activation_stream, projection_done,
+          activation_done, tile_rows, total_rows, n_embd, output_features,
+          n_tiles);
+      break;
+    case torch::kHalf:
+      project_activate_tiles<at::Half, CUDA_R_16F>(
+          x, gate_weight, gate_bias, activated_gates, raw_buffers,
+          projection_stream, activation_stream, projection_done,
+          activation_done, tile_rows, total_rows, n_embd, output_features,
+          n_tiles);
+      break;
+    case torch::kBFloat16:
+      project_activate_tiles<at::BFloat16, CUDA_R_16BF>(
+          x, gate_weight, gate_bias, activated_gates, raw_buffers,
+          projection_stream, activation_stream, projection_done,
+          activation_done, tile_rows, total_rows, n_embd, output_features,
+          n_tiles);
+      break;
+    default:
+      TORCH_CHECK(false, "unsupported projection dtype");
+  }
 
   const int used_buffers = static_cast<int>(std::min<int64_t>(2, n_tiles));
   for (int buffer = 0; buffer < used_buffers; ++buffer) {

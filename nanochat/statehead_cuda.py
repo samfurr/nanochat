@@ -43,6 +43,7 @@ def _load_extension(verbose: bool | None = None):
             ],
             extra_cflags=["-O3"],
             extra_cuda_cflags=["-O3", "-lineinfo"],
+            extra_ldflags=["-lcublas"],
             with_cuda=True,
             verbose=verbose,
         )
