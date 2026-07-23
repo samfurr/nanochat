@@ -26,6 +26,7 @@ import torch
 import torch.distributed as dist
 
 from nanochat.gpt import GPT, GPTConfig, Linear
+from nanochat.statehead import StateHead, StateHeadConfig
 from nanochat.dataloader import tokenizing_distributed_data_loader_bos_bestfit, tokenizing_distributed_data_loader_with_state_bos_bestfit
 from nanochat.common import compute_init, compute_cleanup, print0, DummyWandb, print_banner, get_base_dir, autodetect_device_type, get_peak_flops, COMPUTE_DTYPE, COMPUTE_DTYPE_REASON, is_ddp_initialized
 from nanochat.tokenizer import get_tokenizer, get_token_bytes
@@ -43,13 +44,15 @@ parser = argparse.ArgumentParser(description="Pretrain base model")
 parser.add_argument("--run", type=str, default="dummy", help="wandb run name ('dummy' disables wandb logging)")
 # Runtime
 parser.add_argument("--device-type", type=str, default="", help="cuda|cpu|mps (empty = autodetect)")
+parser.add_argument("--seed", type=int, default=-1, help="fixed PyTorch seed (-1 preserves the existing unseeded behavior)")
 # FP8 training
 parser.add_argument("--fp8", action="store_true", help="enable FP8 training (requires H100+ GPU)")
 parser.add_argument("--fp8-recipe", type=str, default="tensorwise", choices=["rowwise", "tensorwise"], help="FP8 scaling recipe: tensorwise (faster, recommended) or rowwise (more accurate but slower)")
 # Model architecture
-parser.add_argument("--depth", type=int, default=20, help="depth of the Transformer model")
+parser.add_argument("--arch", type=str, default="gpt", choices=["gpt", "statehead"], help="model architecture (default: gpt)")
+parser.add_argument("--depth", type=int, default=20, help="number of model blocks")
 parser.add_argument("--aspect-ratio", type=int, default=64, help="model_dim = depth * aspect_ratio")
-parser.add_argument("--head-dim", type=int, default=128, help="target head dimension for attention")
+parser.add_argument("--head-dim", type=int, default=128, help="target attention or recurrent head dimension")
 parser.add_argument("--max-seq-len", type=int, default=2048, help="max context length")
 parser.add_argument("--window-pattern", type=str, default="SSSL", help="sliding window pattern tiled across layers: L=full, S=half context (e.g. 'SSL')")
 # Training horizon (only one used, in order of precedence)
@@ -85,8 +88,19 @@ user_config = vars(args).copy()  # for logging
 device_type = autodetect_device_type() if args.device_type == "" else args.device_type
 ddp, ddp_rank, ddp_local_rank, ddp_world_size, device = compute_init(device_type)
 master_process = ddp_rank == 0 # this process will do logging, checkpointing etc.
-synchronize = torch.cuda.synchronize if device_type == "cuda" else lambda: None
-get_max_memory = torch.cuda.max_memory_allocated if device_type == "cuda" else lambda: 0
+peak_memory_bytes = 0
+if device_type == "cuda":
+    synchronize = torch.cuda.synchronize
+    get_max_memory = torch.cuda.max_memory_allocated
+elif device_type == "mps":
+    synchronize = torch.mps.synchronize
+    get_max_memory = lambda: peak_memory_bytes
+else:
+    synchronize = lambda: None
+    get_max_memory = lambda: 0
+if args.seed >= 0:
+    torch.manual_seed(args.seed)
+    print0(f"Using fixed PyTorch seed: {args.seed}")
 if device_type == "cuda":
     gpu_device_name = torch.cuda.get_device_name(0)
     gpu_peak_flops = get_peak_flops(gpu_device_name)
@@ -102,19 +116,22 @@ wandb_run = DummyWandb() if use_dummy_wandb else wandb.init(project="nanochat", 
 # Flash Attention status
 from nanochat.flash_attention import USE_FA3
 using_fa3 = USE_FA3
-if using_fa3:
-    print0("✓ Using Flash Attention 3: efficient, new and awesome.")
+if args.arch == "statehead":
+    print0("Using the correctness-first PyTorch StateHead scan (FP8 disabled)")
 else:
-    print0("!" * 80)
-    if HAS_FA3 and COMPUTE_DTYPE != torch.bfloat16:
-        print0(f"WARNING: Flash Attention 3 only supports bf16, but COMPUTE_DTYPE={COMPUTE_DTYPE}. Using PyTorch SDPA fallback")
+    if using_fa3:
+        print0("✓ Using Flash Attention 3: efficient, new and awesome.")
     else:
-        print0("WARNING: Flash Attention 3 not available, using PyTorch SDPA fallback")
-    print0("WARNING: Training will be less efficient without FA3")
-    if args.window_pattern != "L":
-        print0(f"WARNING: SDPA has no support for sliding window attention (window_pattern='{args.window_pattern}'). Your GPU utilization will be terrible.")
-        print0("WARNING: Recommend using --window-pattern L for full context attention without alternating sliding window patterns.")
-    print0("!" * 80)
+        print0("!" * 80)
+        if HAS_FA3 and COMPUTE_DTYPE != torch.bfloat16:
+            print0(f"WARNING: Flash Attention 3 only supports bf16, but COMPUTE_DTYPE={COMPUTE_DTYPE}. Using PyTorch SDPA fallback")
+        else:
+            print0("WARNING: Flash Attention 3 not available, using PyTorch SDPA fallback")
+        print0("WARNING: Training will be less efficient without FA3")
+        if args.window_pattern != "L":
+            print0(f"WARNING: SDPA has no support for sliding window attention (window_pattern='{args.window_pattern}'). Your GPU utilization will be terrible.")
+            print0("WARNING: Recommend using --window-pattern L for full context attention without alternating sliding window patterns.")
+        print0("!" * 80)
 
 # -----------------------------------------------------------------------------
 # Tokenizer will be useful for evaluation and also we need the vocab size to init the model
@@ -133,13 +150,20 @@ def build_model_meta(depth):
     base_dim = depth * args.aspect_ratio
     model_dim = ((base_dim + args.head_dim - 1) // args.head_dim) * args.head_dim
     num_heads = model_dim // args.head_dim
-    config = GPTConfig(
-        sequence_len=args.max_seq_len, vocab_size=vocab_size,
-        n_layer=depth, n_head=num_heads, n_kv_head=num_heads, n_embd=model_dim,
-        window_pattern=args.window_pattern,
-    )
     with torch.device("meta"):
-        model_meta = GPT(config)
+        if args.arch == "gpt":
+            config = GPTConfig(
+                sequence_len=args.max_seq_len, vocab_size=vocab_size,
+                n_layer=depth, n_head=num_heads, n_kv_head=num_heads, n_embd=model_dim,
+                window_pattern=args.window_pattern,
+            )
+            model_meta = GPT(config)
+        else:
+            config = StateHeadConfig(
+                sequence_len=args.max_seq_len, vocab_size=vocab_size,
+                n_layer=depth, n_head=num_heads, n_embd=model_dim,
+            )
+            model_meta = StateHead(config)
     return model_meta
 
 # Build the model, move to device, init the weights
@@ -152,12 +176,16 @@ model.init_weights() # 3) All tensors get initialized
 
 # If we are resuming, overwrite the model parameters with those of the checkpoint
 base_dir = get_base_dir()
-output_dirname = args.model_tag if args.model_tag else f"d{args.depth}" # e.g. d12
+default_model_tag = f"d{args.depth}" if args.arch == "gpt" else f"statehead-d{args.depth}"
+output_dirname = args.model_tag if args.model_tag else default_model_tag
 checkpoint_dir = os.path.join(base_dir, "base_checkpoints", output_dirname)
 resuming = args.resume_from_step != -1
 if resuming:
     print0(f"Resuming optimization from step {args.resume_from_step}")
     model_data, optimizer_data, meta_data = load_checkpoint(checkpoint_dir, args.resume_from_step, device, load_optimizer=True, rank=ddp_rank)
+    checkpoint_arch = meta_data.get("model_type", "gpt")
+    if checkpoint_arch != args.arch:
+        raise ValueError(f"Cannot resume {checkpoint_arch} checkpoint with --arch={args.arch}")
     model.load_state_dict(model_data, strict=True, assign=True)
     del model_data # free up this memory after the copy
 
@@ -165,6 +193,8 @@ if resuming:
 # FP8 training initialization and management (this has to be done before torch.compile)
 
 # Convert Linear layers to Float8Linear if --fp8 is set
+if args.fp8 and args.arch == "statehead":
+    raise ValueError("FP8 is intentionally disabled for StateHead during the correctness-first phases")
 if args.fp8:
     if device_type != "cuda":
         print0("Warning: FP8 training requires CUDA, ignoring --fp8 flag")
@@ -256,6 +286,8 @@ for key, value in param_counts.items():
 num_params = param_counts['total']
 num_flops_per_token = model.estimate_flops()
 print0(f"Estimated FLOPs per token: {num_flops_per_token:e}")
+if args.arch == "statehead":
+    print0(f"Persistent recurrent state bytes per row: {model.recurrent_state_bytes():,}")
 
 # 1) Use scaling laws to determine the optimal training horizon in tokens
 # The compute-optimal models satisfy the Tokens:Params ratio of --target-param-data-ratio (derived experimentally via scaling laws analysis).
@@ -465,12 +497,16 @@ while True:
             "My favorite color is",
             "If 5*x + 3 = 13, then x is",
         ]
-        engine = Engine(orig_model, tokenizer) # use orig_model to avoid recompilation
+        engine = Engine(orig_model, tokenizer) if args.arch == "gpt" else None
         for prompt in prompts:
             tokens = tokenizer(prompt, prepend="<|bos|>")
             with disable_fp8(orig_model):
-                sample, _ = engine.generate_batch(tokens, num_samples=1, max_tokens=16, temperature=0)
-            print0(tokenizer.decode(sample[0]))
+                if args.arch == "gpt":
+                    sample, _ = engine.generate_batch(tokens, num_samples=1, max_tokens=16, temperature=0)
+                    sample_tokens = sample[0]
+                else:
+                    sample_tokens = tokens + list(orig_model.generate(tokens, max_tokens=16, temperature=0))
+            print0(tokenizer.decode(sample_tokens))
         model.train()
 
     # save checkpoint: at the end of the run, or every save_every steps, except at the first step or the resume step
@@ -483,6 +519,7 @@ while True:
             { # metadata saved as json
                 "step": step,
                 "val_bpb": val_bpb, # loss at last step
+                "model_type": args.arch,
                 "model_config": model_config_kwargs,
                 "user_config": user_config, # inputs to the training script
                 "device_batch_size": args.device_batch_size,
@@ -541,6 +578,8 @@ while True:
     train_loss_f = train_loss.item() # .item() is a CPU-GPU sync point
     synchronize()
     t1 = time.time()
+    if device_type == "mps":
+        peak_memory_bytes = max(peak_memory_bytes, torch.mps.current_allocated_memory())
     dt = t1 - t0
     # -------------------------------------------------------------------------
 

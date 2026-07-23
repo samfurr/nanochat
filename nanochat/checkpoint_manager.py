@@ -9,6 +9,7 @@ import torch
 
 from nanochat.common import get_base_dir
 from nanochat.gpt import GPT, GPTConfig
+from nanochat.statehead import StateHead, StateHeadConfig
 from nanochat.tokenizer import get_tokenizer
 from nanochat.common import setup_default_logging
 
@@ -19,8 +20,10 @@ def log0(message):
     if int(os.environ.get('RANK', 0)) == 0:
         logger.info(message)
 
-def _patch_missing_config_keys(model_config_kwargs):
+def _patch_missing_config_keys(model_config_kwargs, model_type="gpt"):
     """Add default values for new config keys missing in old checkpoints."""
+    if model_type != "gpt":
+        return
     # Old models were trained with full context (no sliding window)
     if "window_pattern" not in model_config_kwargs:
         model_config_kwargs["window_pattern"] = "L"
@@ -91,13 +94,21 @@ def build_model(checkpoint_dir, step, device, phase):
         }
     # Hack: fix torch compile issue, which prepends all keys with _orig_mod.
     model_data = {k.removeprefix("_orig_mod."): v for k, v in model_data.items()}
+    model_type = meta_data.get("model_type", "gpt")
     model_config_kwargs = meta_data["model_config"]
-    _patch_missing_config_keys(model_config_kwargs)
+    _patch_missing_config_keys(model_config_kwargs, model_type)
     log0(f"Building model with config: {model_config_kwargs}")
-    model_config = GPTConfig(**model_config_kwargs)
-    _patch_missing_keys(model_data, model_config)
+    if model_type == "gpt":
+        model_config = GPTConfig(**model_config_kwargs)
+        model_cls = GPT
+        _patch_missing_keys(model_data, model_config)
+    elif model_type == "statehead":
+        model_config = StateHeadConfig(**model_config_kwargs)
+        model_cls = StateHead
+    else:
+        raise ValueError(f"Unknown checkpoint model_type: {model_type}")
     with torch.device("meta"):
-        model = GPT(model_config)
+        model = model_cls(model_config)
     # Load the model state
     model.to_empty(device=device)
     model.init_weights() # note: this is dumb, but we need to init the rotary embeddings. TODO: fix model re-init

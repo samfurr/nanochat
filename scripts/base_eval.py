@@ -148,6 +148,7 @@ def main():
     ddp, ddp_rank, ddp_local_rank, ddp_world_size, device = compute_init(device_type)
     # Load model and tokenizer
     model, tokenizer, meta = load_model("base", device, phase="eval", model_tag=args.model_tag, step=args.step)
+    model_type = meta.get("model_type", "gpt")
     sequence_len = meta["model_config"]["sequence_len"]
     token_bytes = get_token_bytes(device=device)
     model_name = f"base_model (step {meta['step']})"
@@ -177,19 +178,29 @@ def main():
                 "My favorite color is",
                 "If 5*x + 3 = 13, then x is",
             ]
-            engine = Engine(model, tokenizer)
+            engine = Engine(model, tokenizer) if model_type == "gpt" else None
             print0("\nConditioned samples:")
             for prompt in prompts:
                 tokens = tokenizer(prompt, prepend="<|bos|>")
-                sample, _ = engine.generate_batch(tokens, num_samples=1, max_tokens=16, temperature=0)
-                sample_str = tokenizer.decode(sample[0])
+                if model_type == "gpt":
+                    sample, _ = engine.generate_batch(tokens, num_samples=1, max_tokens=16, temperature=0)
+                    sample_tokens = sample[0]
+                else:
+                    sample_tokens = tokens + list(model.generate(tokens, max_tokens=16, temperature=0))
+                sample_str = tokenizer.decode(sample_tokens)
                 print0("-" * 80)
                 print0(sample_str)
                 samples.append(sample_str)
 
             print0("\nUnconditioned samples:")
             tokens = tokenizer("", prepend="<|bos|>")
-            uncond, _ = engine.generate_batch(tokens, num_samples=8, max_tokens=128, temperature=1.0)
+            if model_type == "gpt":
+                uncond, _ = engine.generate_batch(tokens, num_samples=8, max_tokens=128, temperature=1.0)
+            else:
+                uncond = [
+                    tokens + list(model.generate(tokens, max_tokens=128, temperature=1.0, seed=42 + i))
+                    for i in range(8)
+                ]
             for sample in uncond:
                 sample_str = tokenizer.decode(sample)
                 print0("-" * 80)
