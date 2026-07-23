@@ -205,5 +205,5 @@ On the next approved H100, measure chunk 16 on the same controlled probe before
 profiling the winning chunk size:
 
 ```bash
-NANOCHAT_DTYPE=bfloat16 NANOCHAT_REPO_COMMIT=52dd72e184bf1459009e9d99a4819a2634f872aa python -m dev.statehead_cuda_preflight --arch statehead --scan-backend cuda --device-batch-size 32 --steps 20 --warmup-steps 5 --scan-chunk-size 16 --output /workspace/statehead-cuda-v2-k16.json
+NANOCHAT_DTYPE=bfloat16 NANOCHAT_REPO_COMMIT=52dd72e184bf1459009e9d99a4819a2634f872aa python -m dev.statehead_cuda_preflight --arch statehead --scan-backend cuda --device-batch-size 32 --steps 20 --warmup-steps 5 --scan-chunk-size 16 --output /root/statehead-cuda-v2-k16.json
 ```
