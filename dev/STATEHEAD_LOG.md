@@ -1140,3 +1140,79 @@ NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest tests/test_statehead.py -q
 NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
 git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git status --short
 ```
+
+## 2026-07-23 — Vast eight-H100 controlled d12 pair
+
+The approved Phase 3 dataset-backed comparison completed on Vast.ai instance
+`45630532` using one node with eight NVIDIA H100 80GB HBM3 GPUs. StateHead ran
+first, followed by a newly approved matched GPT control on the same node,
+tokenizer, exact shard set, seed, data order, 2,520 steps, and
+1,321,205,760-token budget. Both used BF16 and `torch.compile`; StateHead used
+the explicit PyTorch parallel scan, while GPT retained its checked-in Flash
+Attention 3 path. FP8 was disabled.
+
+| Model | Params | Scaling params | Trainer time | Median tok/s | Peak VRAM | Held-out val BPB | CORE |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| GPT d12 | 286,261,730 | 110,100,912 | 324.950 s | 4,053,035 | 28,014.59 MiB | 0.845578 | 0.146506 |
+| StateHead d12, same shape | 85,767,218 | 60,555,264 | 304.807 s | 4,321,656 | 41,432.27 MiB | 0.980587 | 0.067406 |
+
+StateHead did **not** demonstrate learning parity. Its BPB was `0.135009`
+higher and CORE `0.079100` lower. It was only 6.63% faster by median logged
+step throughput despite an estimated training FLOP count 52.16% lower, and its
+peak VRAM was 47.90% higher. StateHead beat GPT on three CORE tasks, tied one,
+and lost eighteen. No NaN, Inf, compiler fallback, or runtime failure was
+logged.
+
+The full-run Vast invoice was `$10.261` for `0.6364842` billed hours,
+including disk and bandwidth. The separate preflight invoice was `$1.749`.
+Both are below the approved `$50` full-run ceiling. The instance was manually
+destroyed after local artifact verification; the automatic three-hour guard
+was then cancelled. The final account audit showed zero instances and zero
+volumes.
+
+Both final model/metadata/CORE triples matched their downloaded SHA-256 values.
+All eight optimizer shards per architecture passed remote SHA-256 verification
+before deletion, but the optimizer payloads were not downloaded. The complete
+1.0 GiB local bundle, including the two final model checkpoints, is at:
+
+```text
+dev-ignore/statehead-vast-d12-controlled-20260723/controlled-results/
+```
+
+Tracked lightweight evidence and the full per-task/command report are at:
+
+```text
+dev/results/statehead-vast-d12-controlled-20260723/
+```
+
+The initial shallow remote clone did not contain the pinned model commit and
+failed before setup, data preparation, or training. After `git fetch
+--unshallow`, the pinned model-code diff was reverified as empty and the runner
+was relaunched successfully.
+
+This run answers the same-shape question only. A depth-12, width-1,152
+StateHead has 117,374,976 scaling parameters, 6.61% above GPT's 110,100,912,
+and is the first reasonable parameter-matched candidate. Do not spend multiple
+same-shape seeds or advance to SFT from this result. First create a separately
+named parameter-matched manifest/runner and gate its likely batch-16 shape on
+one H100.
+
+See
+`dev/results/statehead-vast-d12-controlled-20260723/REPORT.md` for every
+retrieved artifact, the complete per-task table, infrastructure provenance,
+command ledger, unresolved questions, and the exact next local sizing command.
+
+Final local verification:
+
+```text
+focused StateHead suite: 46 passed, 15 skipped in 2.18s
+full suite excluding test_memory_limit: 89 passed, 29 skipped,
+  1 deselected in 4.62s
+StateHead BF16/MPS five-step smoke: loss 5.924298 -> 5.923664
+default GPT BF16/MPS five-step smoke: loss 5.924309 -> 5.923669
+runner syntax and paired dry run: passed
+compileall and diff check: passed
+model/training source unchanged from b952753: passed
+manifests, exits, markers, shards, metadata, 5,040 finite losses,
+  CORE aggregates, and both downloaded checkpoint hashes: passed
+```

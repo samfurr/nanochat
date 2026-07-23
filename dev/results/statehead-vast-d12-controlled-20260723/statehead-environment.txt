@@ -1,0 +1,9 @@
+started_utc=2026-07-23T17:16:03Z
+model_code_commit=b952753243ea14ac391d617244f2fbd52ba0a487
+checkout_head=07d3766f98ea1563b2034477f48e8de5fb12a746
+checkout_status_begin
+checkout_status_end
+python=Python 3.10.20
+torch=2.9.1+cu128
+cuda=12.8
+run_arches=statehead

@@ -1,5 +1,5 @@
 experiment_id: statehead-nanochat-d12-controlled-v1
-status: running_vast_controlled_pair
+status: completed_vast_controlled_pair
 model_code_commit: b952753243ea14ac391d617244f2fbd52ba0a487
 architecture: statehead
 comparison_run: gpt-d12-controlled-v1
@@ -139,7 +139,7 @@ execution:
     balance_usd: 206.0076425183
 vast_execution:
   provider: vastai
-  status: running
+  status: completed_and_destroyed
   paid_run_approved: true
   approved_utc: 2026-07-23
   run_arches: statehead_then_gpt
@@ -172,9 +172,54 @@ vast_execution:
     upload_usd_per_gb: 0.00390625
     pricing_checked_utc: 2026-07-23
   launch_command_environment:
-    RUN_ARCHES: statehead
+    statehead_RUN_ARCHES: statehead
+    gpt_RUN_ARCHES: gpt
     NPROC_PER_NODE: 8
     DOWNLOAD_WORKERS: 16
     NANOCHAT_BASE_DIR: /workspace/nanochat-controlled
   terminate_guard: required
   delete_after_artifact_retrieval: true
+  statehead_started_utc: 2026-07-23T17:18:57Z
+  statehead_finished_utc: 2026-07-23T17:31:05Z
+  gpt_started_utc: 2026-07-23T17:32:09Z
+  gpt_finished_utc: 2026-07-23T17:43:07Z
+  instance_billed_runtime_hours: 0.6364842
+  invoice_charge_usd: 10.261
+  observed_balance_delta_usd: 10.260359
+  prelaunch_balance_usd: 93.59137098144
+  post_destroy_balance_usd: 83.33101198144
+  separate_preflight_charge_usd: 1.749
+  destroyed: true
+  active_instances_after_destroy: 0
+  active_volumes_after_destroy: 0
+results:
+  artifact_directory: dev/results/statehead-vast-d12-controlled-20260723
+  local_full_bundle: dev-ignore/statehead-vast-d12-controlled-20260723/controlled-results
+  checkpoint_selection: predetermined_step_2520
+  statehead:
+    total_parameters: 85767218
+    scaling_parameters: 60555264
+    estimated_flops_per_token: 363414672
+    estimated_training_flops: 4.801456e+17
+    persistent_state_bytes_per_row_bf16: 18432
+    trainer_time_seconds: 304.8073616027832
+    training_command_wall_seconds: 463
+    median_step_tokens_per_second: 4321656.5
+    peak_vram_mib: 41432.27
+    final_training_validation_bpb: 0.9811848397197807
+    held_out_validation_bpb: 0.980587
+    core: 0.067406
+  gpt:
+    total_parameters: 286261730
+    scaling_parameters: 110100912
+    estimated_flops_per_token: 759696048
+    estimated_training_flops: 1.003715e+18
+    trainer_time_seconds: 324.94954109191895
+    training_command_wall_seconds: 489
+    median_step_tokens_per_second: 4053035.0
+    peak_vram_mib: 28014.59
+    final_training_validation_bpb: 0.8455535599609829
+    held_out_validation_bpb: 0.845578
+    core: 0.146506
+  learning_parity_demonstrated: false
+  conclusion: same_shape_statehead_lags_gpt_at_the_fixed_token_budget

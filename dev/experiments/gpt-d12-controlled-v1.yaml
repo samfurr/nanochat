@@ -1,6 +1,6 @@
 experiment_id: gpt-d12-controlled-v1
-status: approved_waiting_for_exact_8xh100_capacity
-model_code_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+status: completed_vast_controlled_pair
+model_code_commit: b952753243ea14ac391d617244f2fbd52ba0a487
 architecture: gpt
 comparison_run: statehead-nanochat-d12-controlled-v1
 seed: 1337
@@ -40,9 +40,30 @@ secondary_endpoints:
   - peak_vram
 checkpoint_selection: predetermined_final_step
 execution_script: runs/statehead_d12_controlled.sh
-execution_script_sha256: b3a0056b4d9ac0c4f534792f684a9a5cd6c2ebe5cf14dda77a2bf0ff675be540
+execution_script_sha256: 21ef5b3022c49c279561e433aa3ee19797cfe9ed5622fd5c1f79618e9e1b5564
 execution_arch_selector: gpt
 paid_run_approved: true
 launch_status: no_pod_created_capacity_unavailable
 last_launch_attempt_utc: 2026-07-23T13:04:06Z
 last_launch_attempt_record: dev/experiments/statehead-nanochat-d12-controlled-v1.yaml
+vast_execution:
+  provider: vastai
+  instance_id: 45630532
+  launch_checkout_head: 07d3766f98ea1563b2034477f48e8de5fb12a746
+  started_utc: 2026-07-23T17:32:09Z
+  finished_utc: 2026-07-23T17:43:07Z
+  destroyed: true
+results:
+  artifact_directory: dev/results/statehead-vast-d12-controlled-20260723
+  checkpoint_selection: predetermined_step_2520
+  total_parameters: 286261730
+  scaling_parameters: 110100912
+  estimated_flops_per_token: 759696048
+  estimated_training_flops: 1.003715e+18
+  trainer_time_seconds: 324.94954109191895
+  training_command_wall_seconds: 489
+  median_step_tokens_per_second: 4053035.0
+  peak_vram_mib: 28014.59
+  final_training_validation_bpb: 0.8455535599609829
+  held_out_validation_bpb: 0.845578
+  core: 0.146506
