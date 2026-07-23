@@ -56,6 +56,7 @@ parser.add_argument("--head-dim", type=int, default=128, help="target attention 
 parser.add_argument("--max-seq-len", type=int, default=2048, help="max context length")
 parser.add_argument("--window-pattern", type=str, default="SSSL", help="sliding window pattern tiled across layers: L=full, S=half context (e.g. 'SSL')")
 parser.add_argument("--statehead-scan-backend", type=str, default="auto", choices=["auto", "pytorch", "cuda"], help="StateHead scan backend; auto selects native CUDA on CUDA and PyTorch elsewhere")
+parser.add_argument("--statehead-scan-chunk-size", type=int, default=64, help="StateHead scan chunk size (ignored by GPT)")
 # Training horizon (only one used, in order of precedence)
 parser.add_argument("--num-iterations", type=int, default=-1, help="explicit number of optimization steps (-1 = disable)")
 parser.add_argument("--target-flops", type=float, default=-1.0, help="calculate num_iterations to reach target_flops (-1 = disable)")
@@ -168,6 +169,7 @@ def build_model_meta(depth):
             config = StateHeadConfig(
                 sequence_len=args.max_seq_len, vocab_size=vocab_size,
                 n_layer=depth, n_head=num_heads, n_embd=model_dim,
+                scan_chunk_size=args.statehead_scan_chunk_size,
                 scan_backend=args.statehead_scan_backend,
             )
             model_meta = StateHead(config)
