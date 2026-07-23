@@ -553,6 +553,139 @@ NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
 git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git status --short
 ```
 
+The remaining same-day continuation entries are recorded newest-first: controlled
+paired-run preparation, eight-H100 DDP preflight, then the earlier batch-32
+capacity probe.
+
+## 2026-07-22 — controlled paired-run launcher preparation
+
+No paid resource was launched in this step. The checked-out source of truth was
+`795d07e1d7d62c62504a7970f8615ada0d427be2`; the pre-existing untracked
+`.DS_Store`, `.agents/`, and `STATEHEAD_NANOCHAT_CODEX_BRIEF.md` remained
+untouched.
+
+`runs/statehead_d12_controlled.sh` now encodes the first dataset-backed paired
+comparison. Its default order is GPT followed by StateHead on one eight-H100
+node. Both use:
+
+```text
+model/training code commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+seed: 1337
+precision: BF16
+FP8: false
+depth/width/heads: 12 / 768 / 6
+sequence length: 2,048
+device batch: 32 rows per rank
+world size: 8
+global batch: 524,288 tokens
+steps: 2,520
+tokens per model: 1,321,205,760
+train shards: 00000 through 00169
+validation shard: 06542
+tokenizer: 2B characters, vocabulary 32,768
+validation BPB: every 250 steps over 41,943,040 tokens
+final evaluation: full CORE plus train/validation BPB
+checkpoint selection: predetermined final step 2,520
+```
+
+The launcher has a dry-run mode, rejects a world size other than eight, rejects
+unknown or duplicate architecture selectors, verifies that all model/training
+paths still match the pinned code commit, verifies the exact 171 dataset shards,
+and refuses to overwrite an existing checkpoint directory. It retains raw train
+and evaluation logs, final model/metadata, all optimizer hashes, per-task CORE
+CSV, tokenizer hashes, environment details, and exit status. It does not create
+RunPod infrastructure or silently enable FP8.
+
+The RunPod workflow uses a temporary 100 GB network volume so data, checkpoints,
+and logs survive pod termination until retrieval. The volume and pod will be
+deleted after successful artifact retrieval, or the volume will be deleted
+immediately if exact eight-H100 pod allocation fails. The target data center is
+selected at launch because eight-H100 capacity is dynamic and currently sparse.
+
+The live eight-H100 rate observed in the completed preflight was `$23.92/hour`.
+RunPod's pricing page also listed Secure Cloud H100 SXM at `$2.99/GPU-hour` on
+2026-07-23. Official network-volume pricing was `$0.07/GB/month` below 1 TB,
+billed hourly, making one hour of 100 GB approximately `$0.0098`. The paired-run
+manifest therefore proposes a 60-minute hard pod termination deadline,
+`$23.92` maximum GPU charge, and `$24.00` total infrastructure ceiling. This
+ceiling is awaiting explicit approval.
+
+Preparation verification:
+
+```text
+bash syntax: passed
+paired dry run: passed; both exact train/eval commands printed and no work executed
+FP8 absence assertion: passed
+world-size rejection guard: passed
+duplicate-architecture rejection guard: passed
+paired YAML consistency assertions: passed
+launcher SHA-256: b3a0056b4d9ac0c4f534792f684a9a5cd6c2ebe5cf14dda77a2bf0ff675be540
+focused StateHead suite: 42 passed in 2.39s
+full suite excluding known macOS memory-limit test: 85 passed, 14 skipped, 1 deselected in 4.68s
+base train/eval CLI flag checks: passed
+compileall and diff check: passed
+model/training paths match pinned commit: passed
+nanochat/gpt.py working-tree diff: empty
+RunPod resources after preparation: zero pods, zero network volumes, $0/hour
+```
+
+### Controlled paired-run preparation command ledger
+
+```bash
+wc -l /Users/haybales/.agents/skills/runpod/SKILL.md && sed -n '1,260p' /Users/haybales/.agents/skills/runpod/SKILL.md
+wc -l /Users/haybales/.agents/skills/runpodctl/SKILL.md && sed -n '1,420p' /Users/haybales/.agents/skills/runpodctl/SKILL.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/SKILL.md && sed -n '1,360p' /Users/haybales/.agents/skills/runpod-usage/SKILL.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/development-loop.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/development-loop.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/pod-workflows.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/pod-workflows.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/storage.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/storage.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/gpu-selection.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/gpu-selection.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/on-pod-setup.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/on-pod-setup.md
+git rev-parse HEAD && git status --short && git branch --show-current && git remote -v && rg --files -g 'AGENTS.md' -g '!**/.git/**'
+sed -n '860,1060p' STATEHEAD_NANOCHAT_CODEX_BRIEF.md
+sed -n '1,380p' scripts/base_train.py && sed -n '380,760p' scripts/base_train.py
+sed -n '1,260p' runs/speedrun.sh && sed -n '1,300p' scripts/base_eval.py
+sed -n '1,300p' nanochat/dataset.py && sed -n '1,260p' scripts/tok_train.py && sed -n '1,240p' nanochat/checkpoint_manager.py
+sed -n '1,220p' dev/experiments/statehead-nanochat-d12-controlled-v1.yaml && sed -n '1,220p' pyproject.toml && rg -n 'NANOCHAT_BASE_DIR|tokenizer|climbmix|hf_hub_download|download' nanochat scripts runs -g '*.py' -g '*.sh'
+nl -ba runs/speedrun.sh | sed -n '1,150p' && nl -ba runs/miniseries.sh | sed -n '1,180p' && nl -ba runs/scaling_laws.sh | sed -n '1,180p'
+nl -ba scripts/base_train.py | sed -n '220,580p'
+nl -ba scripts/base_eval.py | sed -n '1,280p' && nl -ba scripts/tok_train.py | sed -n '1,130p' && nl -ba nanochat/dataset.py | sed -n '1,190p'
+nl -ba nanochat/dataloader.py | sed -n '1,260p' && nl -ba nanochat/common.py | sed -n '1,130p' && nl -ba nanochat/common.py | sed -n '240,390p'
+git log --oneline --decorate -8 && git show --stat --oneline 2944ed65dfb26809073e7b3446ff6255513c83d4 && git diff 2944ed65dfb26809073e7b3446ff6255513c83d4..HEAD -- scripts/base_train.py nanochat/gpt.py nanochat/statehead.py nanochat/dataloader.py runs
+nl -ba scripts/base_train.py | sed -n '288,560p'
+nl -ba scripts/base_eval.py | sed -n '120,270p'
+nl -ba nanochat/dataset.py | sed -n '1,185p' && nl -ba scripts/tok_train.py | sed -n '1,120p'
+find dev -maxdepth 3 -type f -print | sort && find runs -maxdepth 1 -type f -print | sort
+rg -n 'resume|dataloader|save_checkpoint|checkpoint_dir|train_loader|training_time|tokens per second|tok/sec|tokens_per' tests scripts dev -g '*.py' -g '*.sh' -g '*.md'
+nl -ba scripts/base_train.py | sed -n '540,655p' && nl -ba scripts/base_eval.py | sed -n '205,260p' && nl -ba nanochat/dataset.py | sed -n '1,105p'
+nl -ba nanochat/checkpoint_manager.py | sed -n '1,145p' && ls -la uv.lock && du -h uv.lock
+chmod +x runs/statehead_d12_controlled.sh && bash -n runs/statehead_d12_controlled.sh
+git status --short && git diff --stat && git diff --check && sed -n '1,320p' runs/statehead_d12_controlled.sh
+sed -n '1,260p' dev/experiments/statehead-nanochat-d12-controlled-v1.yaml && sed -n '1,240p' dev/experiments/gpt-d12-controlled-v1.yaml
+DRY_RUN=1 bash runs/statehead_d12_controlled.sh
+DRY_RUN=1 bash runs/statehead_d12_controlled.sh > /private/tmp/statehead-controlled-dry-run.txt
+if DRY_RUN=1 NPROC_PER_NODE=4 bash runs/statehead_d12_controlled.sh > /private/tmp/statehead-controlled-invalid-world.txt 2>&1; then exit 1; fi
+if DRY_RUN=1 RUN_ARCHES=gpt,gpt bash runs/statehead_d12_controlled.sh > /private/tmp/statehead-controlled-invalid-arches.txt 2>&1; then exit 1; fi
+.venv/bin/python -c '<assert paired manifests consistent>'
+command -v shellcheck || true
+runpodctl user
+runpodctl pod list --all
+runpodctl network-volume list
+runpodctl datacenter list
+runpodctl network-volume create --help && runpodctl pod create --help
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest tests/test_statehead.py -q
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
+bash -n runs/statehead_d12_controlled.sh && NANOCHAT_DTYPE=float32 .venv/bin/python -m scripts.base_train --help > /private/tmp/statehead-base-train-help.txt && NANOCHAT_DTYPE=float32 .venv/bin/python -m scripts.base_eval --help > /private/tmp/statehead-base-eval-help.txt
+git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git diff --quiet 2944ed65dfb26809073e7b3446ff6255513c83d4 -- nanochat/gpt.py nanochat/statehead.py nanochat/optim.py nanochat/dataloader.py nanochat/checkpoint_manager.py scripts/base_train.py scripts/base_eval.py
+bash -n runs/statehead_d12_controlled.sh && DRY_RUN=1 bash runs/statehead_d12_controlled.sh > /private/tmp/statehead-controlled-dry-run.txt
+shasum -a 256 runs/statehead_d12_controlled.sh
+rg -n '^## 2026-07-22 — controlled paired-run launcher preparation|^## 2026-07-22 — eight-H100|^## 2026-07-22 — one-H100 device-batch-32' dev/STATEHEAD_LOG.md && tail -n 30 dev/STATEHEAD_LOG.md
+rg -n '^## 2026-07-22' dev/STATEHEAD_LOG.md
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest tests/test_statehead.py -q
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
+bash -n runs/statehead_d12_controlled.sh && DRY_RUN=1 bash runs/statehead_d12_controlled.sh > /private/tmp/statehead-controlled-dry-run.txt && .venv/bin/python -c '<assert launcher hash and paired manifests consistent>'
+git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git diff --quiet 2944ed65dfb26809073e7b3446ff6255513c83d4 -- nanochat/gpt.py nanochat/statehead.py nanochat/optim.py nanochat/dataloader.py nanochat/checkpoint_manager.py scripts/base_train.py scripts/base_eval.py && git status --short && git diff --stat && git diff --summary
+```
+
 ## 2026-07-22 — eight-H100 DDP/NCCL preflight
 
 The explicitly approved distributed preflight ran on one Secure Cloud node with

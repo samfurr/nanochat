@@ -1,0 +1,44 @@
+experiment_id: gpt-d12-controlled-v1
+status: awaiting_full_dataset_run_approval
+model_code_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+architecture: gpt
+comparison_run: statehead-nanochat-d12-controlled-v1
+seed: 1337
+precision: bfloat16
+fp8: false
+compile: true
+layers: 12
+model_width: 768
+attention_heads: 6
+head_width: 128
+window_pattern: SSSL
+mlp: nanochat_baseline
+attention: nanochat_baseline
+sequence_length: 2048
+global_batch_tokens: 524288
+device_batch_size: 32
+optimizer: nanochat_muon_adamw
+training_steps: 2520
+total_tokens: 1321205760
+data_manifest_or_shards:
+  dataset: karpathy/climbmix-400b-shuffle
+  train_shards: shard_00000.parquet_through_shard_00169.parquet
+  validation_shard: shard_06542.parquet
+  tokenizer_training_chars: 2000000000
+  tokenizer_vocab_size: 32768
+eval_schedule:
+  validation_bpb_every_steps: 250
+  validation_tokens: 41943040
+  core_during_training: false
+  final_core_max_per_task: -1
+primary_endpoint: final_core
+secondary_endpoints:
+  - val_bpb
+  - per_task_core
+  - total_training_time
+  - tokens_per_second
+  - peak_vram
+checkpoint_selection: predetermined_final_step
+execution_script: runs/statehead_d12_controlled.sh
+execution_script_sha256: b3a0056b4d9ac0c4f534792f684a9a5cd6c2ebe5cf14dda77a2bf0ff675be540
+execution_arch_selector: gpt

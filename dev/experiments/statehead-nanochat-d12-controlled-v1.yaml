@@ -1,8 +1,9 @@
 experiment_id: statehead-nanochat-d12-controlled-v1
 status: awaiting_full_dataset_run_approval
-repo_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+model_code_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
 architecture: statehead
 comparison_run: gpt-d12-controlled-v1
+comparison_manifest: dev/experiments/gpt-d12-controlled-v1.yaml
 seed: 1337
 precision: bfloat16
 fp8: false
@@ -60,3 +61,32 @@ secondary_endpoints:
   - tokens_per_second
   - peak_vram
 checkpoint_selection: predetermined_final_step
+execution:
+  script: runs/statehead_d12_controlled.sh
+  script_sha256: b3a0056b4d9ac0c4f534792f684a9a5cd6c2ebe5cf14dda77a2bf0ff675be540
+  default_architecture_order:
+    - gpt
+    - statehead
+  hardware: 8x_NVIDIA_H100_80GB_HBM3_single_node
+  cloud_type: secure
+  container_image: runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404
+  maximum_runtime_minutes: 60
+  maximum_gpu_charge_usd: 23.92
+  maximum_total_infrastructure_charge_usd: 24.00
+  pricing_basis:
+    secure_h100_sxm_per_gpu_hour_usd: 2.99
+    gpu_count: 8
+    gpu_hour_usd: 23.92
+    network_volume_gb: 100
+    network_volume_usd_per_gb_month: 0.07
+    network_volume_one_hour_estimate_usd: 0.0098
+    pricing_checked_utc: 2026-07-23
+    gpu_pricing_source: https://www.runpod.io/pricing
+    storage_pricing_source: https://docs.runpod.io/storage/network-volumes
+  terminate_guard: required
+  storage:
+    type: temporary_network_volume
+    size_gb: 100
+    data_center: select_at_launch_for_8x_h100_availability
+    delete_after_artifact_retrieval: true
+  paid_run_approved: false
