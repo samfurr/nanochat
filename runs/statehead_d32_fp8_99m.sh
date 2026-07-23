@@ -28,6 +28,7 @@ readonly DATASET_TRAIN_SHARDS=170
 DRY_RUN="${DRY_RUN:-0}"
 SETUP_ENV="${SETUP_ENV:-1}"
 PREPARE_DATA="${PREPARE_DATA:-1}"
+REUSE_CALIBRATION="${REUSE_CALIBRATION:-0}"
 NPROC_PER_NODE="${NPROC_PER_NODE:-8}"
 DOWNLOAD_WORKERS="${DOWNLOAD_WORKERS:-16}"
 NANOCHAT_BASE_DIR="${NANOCHAT_BASE_DIR:-/workspace/nanochat-statehead-d32}"
@@ -99,6 +100,7 @@ build_train_command() {
 require_boolean DRY_RUN "$DRY_RUN"
 require_boolean SETUP_ENV "$SETUP_ENV"
 require_boolean PREPARE_DATA "$PREPARE_DATA"
+require_boolean REUSE_CALIBRATION "$REUSE_CALIBRATION"
 [[ "$NPROC_PER_NODE" == "$WORLD_SIZE" ]] || fail "NPROC_PER_NODE must be exactly $WORLD_SIZE"
 [[ "$DOWNLOAD_WORKERS" =~ ^[1-9][0-9]*$ ]] || fail "DOWNLOAD_WORKERS must be a positive integer"
 [[ -f pyproject.toml && -d nanochat && -d scripts ]] || fail "run from the nanochat repository root"
@@ -216,42 +218,70 @@ fi
 EXPECTED_TRAIN_SHARDS="$DATASET_TRAIN_SHARDS" python -c 'import os; from pathlib import Path; from nanochat.dataset import DATA_DIR; count = int(os.environ["EXPECTED_TRAIN_SHARDS"]); expected = {f"shard_{i:05d}.parquet" for i in range(count)} | {"shard_06542.parquet"}; actual = {p.name for p in Path(DATA_DIR).glob("*.parquet")}; assert expected == actual, (len(expected), len(actual), sorted(expected - actual)[:5], sorted(actual - expected)[:5]); print(f"verified {len(actual)} exact dataset shards")' | tee "$RESULTS_DIR/dataset-verification.txt"
 sha256sum "$NANOCHAT_BASE_DIR/tokenizer/tokenizer.pkl" "$NANOCHAT_BASE_DIR/tokenizer/token_bytes.pt" > "$RESULTS_DIR/tokenizer.sha256"
 
-echo "Starting production-shape FP8/DDP finite-gradient gate."
-NANOCHAT_DTYPE=bfloat16 NANOCHAT_REPO_COMMIT="$(git rev-parse HEAD)" \
-    python -m torch.distributed.run --standalone "--nproc_per_node=$WORLD_SIZE" \
-    --module dev.statehead_cuda_preflight \
-    --arch=statehead \
-    "--device-batch-size=$DEVICE_BATCH_SIZE" \
-    --steps=4 \
-    --warmup-steps=1 \
-    "--layers=$DEPTH" \
-    "--model-width=$MODEL_WIDTH" \
-    "--heads=$STATE_HEADS" \
-    "--sequence-length=$SEQUENCE_LENGTH" \
-    "--scan-chunk-size=$SCAN_CHUNK_SIZE" \
-    --scan-backend=cuda \
-    --fp8 \
-    --verify-gradients \
-    --output="$RESULTS_DIR/statehead-d32-fp8-ddp-gate.json" \
-    2>&1 | tee "$RESULTS_DIR/statehead-d32-fp8-ddp-gate.log"
-
 GATE_TAG="statehead-d32-fp8-calibration"
 GATE_CHECKPOINT_DIR="$NANOCHAT_BASE_DIR/base_checkpoints/$GATE_TAG"
-[[ ! -e "$GATE_CHECKPOINT_DIR" ]] || fail "gate checkpoint directory already exists: $GATE_CHECKPOINT_DIR"
-build_train_command "$GATE_TAG" "$GATE_STEPS" "$GATE_EVAL_EVERY" "$GATE_EVAL_TOKENS" -1
-echo "Starting dataset calibration/learning gate."
-print_command env NANOCHAT_DTYPE=bfloat16 "${TRAIN_COMMAND[@]}"
-NANOCHAT_DTYPE=bfloat16 "${TRAIN_COMMAND[@]}" 2>&1 | tee "$RESULTS_DIR/${GATE_TAG}-train.log"
-
 printf -v GATE_STEP_PADDED "%06d" "$GATE_STEPS"
 GATE_META="$GATE_CHECKPOINT_DIR/meta_${GATE_STEP_PADDED}.json"
+GATE_LOG="$RESULTS_DIR/${GATE_TAG}-train.log"
+PREFLIGHT_JSON="$RESULTS_DIR/statehead-d32-fp8-ddp-gate.json"
+
+if [[ "$REUSE_CALIBRATION" == "0" ]]; then
+    echo "Starting production-shape FP8/DDP finite-gradient gate."
+    NANOCHAT_DTYPE=bfloat16 NANOCHAT_REPO_COMMIT="$(git rev-parse HEAD)" \
+        python -m torch.distributed.run --standalone "--nproc_per_node=$WORLD_SIZE" \
+        --module dev.statehead_cuda_preflight \
+        --arch=statehead \
+        "--device-batch-size=$DEVICE_BATCH_SIZE" \
+        --steps=4 \
+        --warmup-steps=1 \
+        "--layers=$DEPTH" \
+        "--model-width=$MODEL_WIDTH" \
+        "--heads=$STATE_HEADS" \
+        "--sequence-length=$SEQUENCE_LENGTH" \
+        "--scan-chunk-size=$SCAN_CHUNK_SIZE" \
+        --scan-backend=cuda \
+        --fp8 \
+        --verify-gradients \
+        --output="$PREFLIGHT_JSON" \
+        2>&1 | tee "$RESULTS_DIR/statehead-d32-fp8-ddp-gate.log"
+
+    [[ ! -e "$GATE_CHECKPOINT_DIR" ]] || fail "gate checkpoint directory already exists: $GATE_CHECKPOINT_DIR"
+    build_train_command "$GATE_TAG" "$GATE_STEPS" "$GATE_EVAL_EVERY" "$GATE_EVAL_TOKENS" -1
+    echo "Starting dataset calibration/learning gate."
+    print_command env NANOCHAT_DTYPE=bfloat16 "${TRAIN_COMMAND[@]}"
+    NANOCHAT_DTYPE=bfloat16 "${TRAIN_COMMAND[@]}" 2>&1 | tee "$GATE_LOG"
+else
+    echo "Reusing completed production-shape preflight and calibration evidence."
+    [[ -f "$PREFLIGHT_JSON" ]] || fail "reusable preflight result missing: $PREFLIGHT_JSON"
+    PREFLIGHT_JSON="$PREFLIGHT_JSON" python - <<'PY'
+import json
+import os
+
+with open(os.environ["PREFLIGHT_JSON"], encoding="utf-8") as handle:
+    result = json.load(handle)
+config = result["config"]
+assert result["architecture"] == "statehead"
+assert result["world_size"] == 8
+assert result["fp8"] is True
+assert result["gradient_finiteness_checked"] is True
+assert result["parameter_checksum_spread"] == 0.0
+assert config["layers"] == 32
+assert config["model_width"] == 2048
+assert config["device_batch_size"] == 8
+assert config["sequence_length"] == 2048
+assert config["scan_chunk_size"] == 32
+assert config["scan_backend"] == "cuda"
+print("verified reusable FP8/DDP preflight evidence")
+PY
+fi
+
 [[ -f "$GATE_META" ]] || fail "gate metadata missing: $GATE_META"
+[[ -f "$GATE_LOG" ]] || fail "gate log missing: $GATE_LOG"
 cp "$GATE_META" "$RESULTS_DIR/${GATE_TAG}-meta_${GATE_STEP_PADDED}.json"
 
 CALIBRATION_OUTPUT="$RESULTS_DIR/calibration.json"
-GATE_LOG="$RESULTS_DIR/${GATE_TAG}-train.log"
 GATE_META="$GATE_META" GATE_LOG="$GATE_LOG" \
-TARGET_TRAINING_SECONDS="$TARGET_TRAINING_SECONDS" \
+CALIBRATION_TARGET_SECONDS="$TARGET_TRAINING_SECONDS" \
 CALIBRATION_OUTPUT="$CALIBRATION_OUTPUT" python - <<'PY'
 import json
 import math
@@ -282,7 +312,7 @@ if timed_steps <= 0 or not math.isfinite(training_seconds) or training_seconds <
         f"invalid timing: completed_step={completed_step} training_seconds={training_seconds}"
     )
 seconds_per_step = training_seconds / timed_steps
-target_seconds = int(os.environ["TARGET_TRAINING_SECONDS"])
+target_seconds = int(os.environ["CALIBRATION_TARGET_SECONDS"])
 training_steps = round(target_seconds / seconds_per_step) + 11
 if not 1000 <= training_steps <= 20000:
     raise SystemExit(

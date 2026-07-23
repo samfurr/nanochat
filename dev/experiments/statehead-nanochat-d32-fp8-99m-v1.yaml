@@ -63,6 +63,7 @@ paid_gate:
   production_shape_ddp_fp8_finite_gradient_steps: 4
   dataset_calibration_steps: 125
   dataset_validation_tokens: 4194304
+  reuse_completed_calibration_requires_explicit_opt_in: true
   continue_requirements:
     - exact_8xh100_sxm_single_node
     - cuda_extension_compiles
