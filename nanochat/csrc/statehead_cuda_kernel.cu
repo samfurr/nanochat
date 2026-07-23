@@ -1,13 +1,16 @@
 #include <torch/extension.h>
 
+#include <ATen/cuda/CUDABlas.h>
 #include <ATen/cuda/CUDAContext.h>
 #include <c10/cuda/CUDAException.h>
 #include <c10/cuda/CUDAGuard.h>
+#include <c10/cuda/CUDAStream.h>
 
 #include <cuda.h>
 #include <cuda_runtime.h>
 
 #include <algorithm>
+#include <array>
 #include <vector>
 
 namespace {
@@ -385,28 +388,21 @@ void check_inputs(
       kMaxChunkSize);
 }
 
-}  // namespace
-
-std::vector<torch::Tensor> statehead_forward_cuda(
-    torch::Tensor gates,
-    torch::Tensor gate_bias,
-    torch::Tensor initial_state,
+std::vector<torch::Tensor> scan_activated_gates(
+    const torch::Tensor& activated_gates,
+    const torch::Tensor& initial_state,
     int64_t chunk_size) {
-  check_inputs(gates, gate_bias, initial_state, chunk_size);
-  const c10::cuda::CUDAGuard device_guard(gates.device());
-
-  const int64_t batch = gates.size(0);
-  const int64_t sequence_len = gates.size(1);
-  const int64_t n_head = gates.size(3);
-  const int64_t head_dim = gates.size(4);
+  const int64_t batch = activated_gates.size(0);
+  const int64_t sequence_len = activated_gates.size(1);
+  const int64_t n_head = activated_gates.size(3);
+  const int64_t head_dim = activated_gates.size(4);
   const int64_t total_states = batch * n_head * head_dim;
   const int64_t n_chunks = (sequence_len + chunk_size - 1) / chunk_size;
 
   auto output = torch::empty(
-      {batch, sequence_len, n_head, head_dim}, gates.options());
+      {batch, sequence_len, n_head, head_dim}, activated_gates.options());
   auto final_state = torch::empty_like(initial_state);
-  auto activated_gates = torch::empty_like(gates);
-  auto float_options = gates.options().dtype(torch::kFloat);
+  auto float_options = activated_gates.options().dtype(torch::kFloat);
   auto chunk_a = torch::empty(
       {batch, n_chunks, n_head, head_dim}, float_options);
   auto chunk_u = torch::empty_like(chunk_a);
@@ -417,27 +413,14 @@ std::vector<torch::Tensor> statehead_forward_cuda(
       static_cast<int>((summary_items + kForwardThreads - 1) / kForwardThreads);
   const int state_blocks =
       static_cast<int>((total_states + kForwardThreads - 1) / kForwardThreads);
-  const int64_t total_gate_states = batch * sequence_len * n_head * head_dim;
-  const int gate_blocks = static_cast<int>(
-      (total_gate_states + kForwardThreads - 1) / kForwardThreads);
-  const int64_t gate_stride = n_head * head_dim;
   const cudaStream_t stream = c10::cuda::getCurrentCUDAStream().stream();
 
   AT_DISPATCH_FLOATING_TYPES_AND2(
       at::ScalarType::Half,
       at::ScalarType::BFloat16,
-      gates.scalar_type(),
-      "statehead_forward_cuda",
+      activated_gates.scalar_type(),
+      "statehead_scan_activated_cuda",
       [&] {
-        statehead_activate_gates_kernel<scalar_t>
-            <<<gate_blocks, kForwardThreads, 0, stream>>>(
-                gates.data_ptr<scalar_t>(),
-                gate_bias.data_ptr<scalar_t>(),
-                activated_gates.data_ptr<scalar_t>(),
-                total_gate_states,
-                gate_stride);
-        C10_CUDA_KERNEL_LAUNCH_CHECK();
-
         statehead_chunk_summary_kernel<scalar_t>
             <<<summary_blocks, kForwardThreads, 0, stream>>>(
                 activated_gates.data_ptr<scalar_t>(),
@@ -478,7 +461,206 @@ std::vector<torch::Tensor> statehead_forward_cuda(
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       });
 
-  return {output, final_state, chunk_initials, activated_gates};
+  return {output, final_state, chunk_initials};
+}
+
+}  // namespace
+
+std::vector<torch::Tensor> statehead_forward_cuda(
+    torch::Tensor gates,
+    torch::Tensor gate_bias,
+    torch::Tensor initial_state,
+    int64_t chunk_size) {
+  check_inputs(gates, gate_bias, initial_state, chunk_size);
+  const c10::cuda::CUDAGuard device_guard(gates.device());
+
+  const int64_t batch = gates.size(0);
+  const int64_t sequence_len = gates.size(1);
+  const int64_t n_head = gates.size(3);
+  const int64_t head_dim = gates.size(4);
+  auto activated_gates = torch::empty_like(gates);
+  const int64_t total_gate_states = batch * sequence_len * n_head * head_dim;
+  const int gate_blocks = static_cast<int>(
+      (total_gate_states + kForwardThreads - 1) / kForwardThreads);
+  const int64_t gate_stride = n_head * head_dim;
+  const cudaStream_t stream = c10::cuda::getCurrentCUDAStream().stream();
+
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::ScalarType::Half,
+      at::ScalarType::BFloat16,
+      gates.scalar_type(),
+      "statehead_forward_cuda",
+      [&] {
+        statehead_activate_gates_kernel<scalar_t>
+            <<<gate_blocks, kForwardThreads, 0, stream>>>(
+                gates.data_ptr<scalar_t>(),
+                gate_bias.data_ptr<scalar_t>(),
+                activated_gates.data_ptr<scalar_t>(),
+                total_gate_states,
+                gate_stride);
+        C10_CUDA_KERNEL_LAUNCH_CHECK();
+      });
+
+  auto result = scan_activated_gates(activated_gates, initial_state, chunk_size);
+  result.push_back(activated_gates);
+  return result;
+}
+
+std::vector<torch::Tensor> statehead_forward_projected_cuda(
+    torch::Tensor x,
+    torch::Tensor gate_weight,
+    torch::Tensor gate_bias,
+    torch::Tensor initial_state,
+    int64_t n_head,
+    int64_t chunk_size,
+    int64_t projection_tile_rows) {
+  TORCH_CHECK(x.is_cuda(), "x must be a CUDA tensor");
+  TORCH_CHECK(gate_weight.is_cuda(), "gate_weight must be a CUDA tensor");
+  TORCH_CHECK(gate_bias.is_cuda(), "gate_bias must be a CUDA tensor");
+  TORCH_CHECK(initial_state.is_cuda(), "initial_state must be a CUDA tensor");
+  TORCH_CHECK(
+      x.device() == gate_weight.device() &&
+          x.device() == gate_bias.device() &&
+          x.device() == initial_state.device(),
+      "devices must match");
+  TORCH_CHECK(x.is_contiguous(), "x must be contiguous");
+  TORCH_CHECK(gate_weight.is_contiguous(), "gate_weight must be contiguous");
+  TORCH_CHECK(gate_bias.is_contiguous(), "gate_bias must be contiguous");
+  TORCH_CHECK(initial_state.is_contiguous(), "initial_state must be contiguous");
+  TORCH_CHECK(x.dim() == 3, "x must have shape [B, T, D]");
+  TORCH_CHECK(gate_weight.dim() == 2, "gate_weight must have shape [4D, D]");
+  TORCH_CHECK(initial_state.dim() == 3, "initial_state must have shape [B, H, Dh]");
+  TORCH_CHECK(x.size(1) > 0, "sequence length must be positive");
+  TORCH_CHECK(n_head > 0, "n_head must be positive");
+  TORCH_CHECK(x.size(2) % n_head == 0, "n_head must divide model width");
+  TORCH_CHECK(
+      gate_weight.size(0) == 4 * x.size(2) &&
+          gate_weight.size(1) == x.size(2),
+      "gate_weight must have shape [4D, D]");
+  TORCH_CHECK(gate_bias.numel() == 4 * x.size(2), "gate_bias must have 4D elements");
+  TORCH_CHECK(initial_state.size(0) == x.size(0), "batch sizes must match");
+  TORCH_CHECK(initial_state.size(1) == n_head, "initial_state head count mismatch");
+  TORCH_CHECK(
+      initial_state.size(2) == x.size(2) / n_head,
+      "initial_state head dimension mismatch");
+  TORCH_CHECK(
+      x.scalar_type() == gate_weight.scalar_type() &&
+          x.scalar_type() == gate_bias.scalar_type() &&
+          x.scalar_type() == initial_state.scalar_type(),
+      "dtypes must match");
+  TORCH_CHECK(
+      x.scalar_type() == torch::kFloat ||
+          x.scalar_type() == torch::kHalf ||
+          x.scalar_type() == torch::kBFloat16,
+      "supported dtypes are float32, float16, and bfloat16");
+  TORCH_CHECK(
+      chunk_size > 0 && chunk_size <= kMaxChunkSize,
+      "invalid chunk_size");
+  TORCH_CHECK(projection_tile_rows > 0, "projection_tile_rows must be positive");
+
+  const c10::cuda::CUDAGuard device_guard(x.device());
+  const int64_t batch = x.size(0);
+  const int64_t sequence_len = x.size(1);
+  const int64_t n_embd = x.size(2);
+  const int64_t head_dim = n_embd / n_head;
+  const int64_t total_rows = batch * sequence_len;
+  const int64_t tile_rows = std::min(projection_tile_rows, total_rows);
+  const int64_t output_features = 4 * n_embd;
+  const int64_t n_tiles = (total_rows + tile_rows - 1) / tile_rows;
+
+  auto activated_gates = torch::empty(
+      {batch, sequence_len, 4, n_head, head_dim}, x.options());
+  std::array<torch::Tensor, 2> raw_buffers = {
+      torch::empty({tile_rows, output_features}, x.options()),
+      torch::empty({tile_rows, output_features}, x.options()),
+  };
+
+  const auto current_stream = c10::cuda::getCurrentCUDAStream();
+  const auto projection_stream =
+      c10::cuda::getStreamFromPool(false, x.get_device());
+  const auto activation_stream =
+      c10::cuda::getStreamFromPool(false, x.get_device());
+  cudaEvent_t inputs_ready;
+  std::array<cudaEvent_t, 2> projection_done;
+  std::array<cudaEvent_t, 2> activation_done;
+  C10_CUDA_CHECK(cudaEventCreateWithFlags(&inputs_ready, cudaEventDisableTiming));
+  for (int buffer = 0; buffer < 2; ++buffer) {
+    C10_CUDA_CHECK(
+        cudaEventCreateWithFlags(&projection_done[buffer], cudaEventDisableTiming));
+    C10_CUDA_CHECK(
+        cudaEventCreateWithFlags(&activation_done[buffer], cudaEventDisableTiming));
+  }
+  C10_CUDA_CHECK(cudaEventRecord(inputs_ready, current_stream.stream()));
+  C10_CUDA_CHECK(
+      cudaStreamWaitEvent(projection_stream.stream(), inputs_ready, 0));
+
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::ScalarType::Half,
+      at::ScalarType::BFloat16,
+      x.scalar_type(),
+      "statehead_forward_projected_cuda",
+      [&] {
+        for (int64_t tile = 0; tile < n_tiles; ++tile) {
+          const int buffer = static_cast<int>(tile % 2);
+          const int64_t row_start = tile * tile_rows;
+          const int64_t rows = std::min(tile_rows, total_rows - row_start);
+          if (tile >= 2) {
+            C10_CUDA_CHECK(cudaStreamWaitEvent(
+                projection_stream.stream(), activation_done[buffer], 0));
+          }
+          {
+            const c10::cuda::CUDAStreamGuard stream_guard(projection_stream);
+            at::cuda::blas::gemm<scalar_t>(
+                't',
+                'n',
+                output_features,
+                rows,
+                n_embd,
+                1.0f,
+                gate_weight.data_ptr<scalar_t>(),
+                n_embd,
+                x.data_ptr<scalar_t>() + row_start * n_embd,
+                n_embd,
+                0.0f,
+                raw_buffers[buffer].data_ptr<scalar_t>(),
+                output_features);
+          }
+          C10_CUDA_CHECK(cudaEventRecord(
+              projection_done[buffer], projection_stream.stream()));
+          C10_CUDA_CHECK(cudaStreamWaitEvent(
+              activation_stream.stream(), projection_done[buffer], 0));
+
+          const int64_t gate_states = rows * n_embd;
+          const int gate_blocks = static_cast<int>(
+              (gate_states + kForwardThreads - 1) / kForwardThreads);
+          statehead_activate_gates_kernel<scalar_t>
+              <<<gate_blocks, kForwardThreads, 0, activation_stream.stream()>>>(
+                  raw_buffers[buffer].data_ptr<scalar_t>(),
+                  gate_bias.data_ptr<scalar_t>(),
+                  activated_gates.data_ptr<scalar_t>() +
+                      row_start * output_features,
+                  gate_states,
+                  n_embd);
+          C10_CUDA_KERNEL_LAUNCH_CHECK();
+          C10_CUDA_CHECK(cudaEventRecord(
+              activation_done[buffer], activation_stream.stream()));
+        }
+      });
+
+  const int used_buffers = static_cast<int>(std::min<int64_t>(2, n_tiles));
+  for (int buffer = 0; buffer < used_buffers; ++buffer) {
+    C10_CUDA_CHECK(cudaStreamWaitEvent(
+        current_stream.stream(), activation_done[buffer], 0));
+  }
+  C10_CUDA_CHECK(cudaEventDestroy(inputs_ready));
+  for (int buffer = 0; buffer < 2; ++buffer) {
+    C10_CUDA_CHECK(cudaEventDestroy(projection_done[buffer]));
+    C10_CUDA_CHECK(cudaEventDestroy(activation_done[buffer]));
+  }
+
+  auto result = scan_activated_gates(activated_gates, initial_state, chunk_size);
+  result.push_back(activated_gates);
+  return result;
 }
 
 std::vector<torch::Tensor> statehead_backward_cuda(

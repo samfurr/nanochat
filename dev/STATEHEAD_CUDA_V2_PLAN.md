@@ -280,3 +280,47 @@ Full report, profiles, tests, rejected probes, cost, commands, and checksums:
 ```text
 dev/results/statehead-cuda-v4-optimization-20260723/REPORT.md
 ```
+
+## CUDA v7 projection/activation pipeline probe
+
+The next reversible probe keeps CUDA v4 available as `scan_backend=cuda` and
+adds an explicit `scan_backend=cuda_projected`. It does not replace the large
+gate GEMM with a handwritten recurrence kernel.
+
+For the flattened gate projection
+`[B*T,D] @ [D,4D] -> [B*T,4D]`, v7:
+
+1. divides only the flattened token-row dimension into a small number of large
+   tiles;
+2. runs every tile through PyTorch's cuBLAS-backed BF16 GEMM on a projection
+   stream;
+3. runs the existing mixed sigmoid/tanh plus bias CUDA activation on a second
+   stream;
+4. double-buffers raw gate tiles so activation for tile `n` can overlap the
+   tensor-core GEMM for tile `n+1`;
+5. writes activated gates directly into the existing contiguous
+   `[B,T,4,H,Dh]` layout;
+6. invokes the verified CUDA v4 scan only after the activation stream has
+   completed;
+7. uses the existing scan backward to produce raw-logit gradients, then the
+   same two projection-gradient GEMMs and bias reduction as the regular linear.
+
+The initial production-shape tile size is 16,384 flattened rows, which yields
+four tiles for batch 32 and sequence length 2,048. It is an explicit config and
+preflight parameter so 8,192 and 32,768 can be measured without source edits.
+
+Acceptance gates:
+
+- CUDA 12.8 compilation and extension load;
+- FP32 and BF16 projected full-model loss/parameter-gradient parity against
+  the compiled PyTorch backend;
+- partial chunks and sequence length 2,048;
+- `torch.compile(fullgraph=True)` compatibility;
+- finite-gradient short training;
+- full-step throughput strictly above v4 on the same H100, with v4 rerun as
+  the same-session control;
+- no change to `scan_backend=cuda`, PyTorch StateHead, or GPT behavior.
+
+Reject v7 if cuBLAS tiling loses more GEMM efficiency than the activation
+overlap saves, if multistream execution prevents graph compilation/capture, or
+if its memory/workspace overhead materially erodes v4's 13.15 GiB advantage.

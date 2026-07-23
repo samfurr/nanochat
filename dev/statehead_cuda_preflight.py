@@ -53,7 +53,17 @@ def main():
     parser.add_argument("--heads", type=int, default=6)
     parser.add_argument("--vocab-size", type=int, default=32768)
     parser.add_argument("--scan-chunk-size", type=int, default=64)
-    parser.add_argument("--scan-backend", choices=["pytorch", "cuda"], default="pytorch")
+    parser.add_argument(
+        "--scan-backend",
+        choices=["pytorch", "cuda", "cuda_projected"],
+        default="pytorch",
+    )
+    parser.add_argument(
+        "--projection-tile-rows",
+        type=int,
+        default=16384,
+        help="flattened token rows per cuBLAS tile for cuda_projected",
+    )
     parser.add_argument("--fp8", action="store_true")
     parser.add_argument("--eager", action="store_true", help="disable torch.compile")
     parser.add_argument(
@@ -75,6 +85,8 @@ def main():
         )
     if args.steps < 1 or args.device_batch_size < 1:
         raise ValueError("--steps and --device-batch-size must be positive")
+    if args.projection_tile_rows < 1:
+        raise ValueError("--projection-tile-rows must be positive")
     if args.warmup_steps < 0 or args.warmup_steps >= args.steps:
         raise ValueError("--warmup-steps must be non-negative and less than --steps")
     if args.arch == "gpt" and args.scan_backend != "pytorch":
@@ -104,6 +116,7 @@ def main():
             n_embd=args.model_width,
             scan_chunk_size=args.scan_chunk_size,
             scan_backend=args.scan_backend,
+            projection_tile_rows=args.projection_tile_rows,
         )
         model_cls = StateHead
     with torch.device("meta"):
@@ -112,7 +125,7 @@ def main():
     model.init_weights()
     original_model = model
 
-    if args.arch == "statehead" and args.scan_backend == "cuda":
+    if args.arch == "statehead" and args.scan_backend in ("cuda", "cuda_projected"):
         from nanochat.statehead_cuda import preload_statehead_cuda
 
         preload_statehead_cuda()
