@@ -61,6 +61,11 @@ def main():
         action="store_true",
         help="check every parameter gradient for finiteness (stability mode, not timing mode)",
     )
+    parser.add_argument(
+        "--nsys-capture",
+        action="store_true",
+        help="delimit post-warmup steps with the CUDA profiler API for Nsight Systems",
+    )
     parser.add_argument("--output", type=str, default="")
     args = parser.parse_args()
 
@@ -169,6 +174,9 @@ def main():
     torch.cuda.reset_peak_memory_stats(device)
     step_records = []
     for step in range(args.steps):
+        if args.nsys_capture and step == args.warmup_steps:
+            torch.cuda.synchronize()
+            torch.cuda.cudart().cudaProfilerStart()
         start = time.perf_counter()
         loss = model(inputs, targets)
         loss.backward()
@@ -201,6 +209,9 @@ def main():
             f"step={step} loss={loss_value:.6f} max_rank_seconds={max_seconds:.3f} "
             f"global_tok_per_sec={global_tokens / max_seconds:,.0f}"
         )
+    if args.nsys_capture:
+        torch.cuda.synchronize()
+        torch.cuda.cudart().cudaProfilerStop()
 
     checksum = parameter_checksum(original_model)
     checksum_min = checksum.clone()
