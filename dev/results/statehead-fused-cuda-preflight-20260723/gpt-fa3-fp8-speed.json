@@ -1,0 +1,232 @@
+{
+  "probe": "cuda_full_step_comparison",
+  "scientific_result": false,
+  "architecture": "gpt",
+  "repo_commit": "ada94afd6c526158331bc3a25785e9c48894d08b",
+  "torch_version": "2.9.1+cu128",
+  "cuda_version": "12.8",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "world_size": 1,
+  "compiled": true,
+  "seed": 1337,
+  "precision": "torch.bfloat16",
+  "fp8": true,
+  "fp8_linear_count": 73,
+  "gradient_finiteness_checked": false,
+  "config": {
+    "arch": "gpt",
+    "device_batch_size": 32,
+    "steps": 20,
+    "warmup_steps": 5,
+    "seed": 1337,
+    "sequence_length": 2048,
+    "layers": 12,
+    "model_width": 768,
+    "heads": 6,
+    "vocab_size": 32768,
+    "scan_chunk_size": 64,
+    "scan_backend": "pytorch",
+    "fp8": true,
+    "eager": false,
+    "verify_gradients": false,
+    "output": "/workspace/statehead-preflight-results/gpt-fa3-fp8-speed.json"
+  },
+  "parameter_counts": {
+    "wte": 25165824,
+    "value_embeds": 150994944,
+    "lm_head": 25165824,
+    "transformer_matrices": 84935088,
+    "scalars": 50,
+    "total": 286261730
+  },
+  "scaling_params": 110100912,
+  "flops_per_token": 759696048,
+  "state_bytes_per_rank": 0,
+  "optimizer_groups": [
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 25165824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 25165824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 6,
+      "parameters": 150994944
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 12
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 12
+    },
+    {
+      "kind": "adamw",
+      "tensors": 3,
+      "parameters": 26
+    },
+    {
+      "kind": "muon",
+      "tensors": 6,
+      "parameters": 432
+    },
+    {
+      "kind": "muon",
+      "tensors": 48,
+      "parameters": 28311552
+    },
+    {
+      "kind": "muon",
+      "tensors": 12,
+      "parameters": 28311552
+    },
+    {
+      "kind": "muon",
+      "tensors": 12,
+      "parameters": 28311552
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "loss_rank0": 10.39763355255127,
+      "seconds_max_rank": 60.54796772450209,
+      "global_tokens_per_second": 1082.3814978926105
+    },
+    {
+      "step": 1,
+      "loss_rank0": 7.442668437957764,
+      "seconds_max_rank": 0.12445363216102123,
+      "global_tokens_per_second": 526589.6933824148
+    },
+    {
+      "step": 2,
+      "loss_rank0": 3.9747307300567627,
+      "seconds_max_rank": 0.12487080506980419,
+      "global_tokens_per_second": 524830.4434600597
+    },
+    {
+      "step": 3,
+      "loss_rank0": 1.7062264680862427,
+      "seconds_max_rank": 0.12532777339220047,
+      "global_tokens_per_second": 522916.81425562216
+    },
+    {
+      "step": 4,
+      "loss_rank0": 1.114753246307373,
+      "seconds_max_rank": 0.12567918561398983,
+      "global_tokens_per_second": 521454.68384308927
+    },
+    {
+      "step": 5,
+      "loss_rank0": 1.0631487369537354,
+      "seconds_max_rank": 0.12490903027355671,
+      "global_tokens_per_second": 524669.8325691349
+    },
+    {
+      "step": 6,
+      "loss_rank0": 0.9978235960006714,
+      "seconds_max_rank": 0.12530634924769402,
+      "global_tokens_per_second": 523006.219504923
+    },
+    {
+      "step": 7,
+      "loss_rank0": 0.9415601491928101,
+      "seconds_max_rank": 0.12815779447555542,
+      "global_tokens_per_second": 511369.5992365116
+    },
+    {
+      "step": 8,
+      "loss_rank0": 0.6464987993240356,
+      "seconds_max_rank": 0.13725331611931324,
+      "global_tokens_per_second": 477482.0882508228
+    },
+    {
+      "step": 9,
+      "loss_rank0": 24.828567504882812,
+      "seconds_max_rank": 0.12759399227797985,
+      "global_tokens_per_second": 513629.1986006789
+    },
+    {
+      "step": 10,
+      "loss_rank0": 24.17845344543457,
+      "seconds_max_rank": 0.12673495523631573,
+      "global_tokens_per_second": 517110.6888213959
+    },
+    {
+      "step": 11,
+      "loss_rank0": 21.155384063720703,
+      "seconds_max_rank": 0.12764396704733372,
+      "global_tokens_per_second": 513428.1040928283
+    },
+    {
+      "step": 12,
+      "loss_rank0": 1.476701021194458,
+      "seconds_max_rank": 0.126681350171566,
+      "global_tokens_per_second": 517329.503602889
+    },
+    {
+      "step": 13,
+      "loss_rank0": 1.6483192443847656,
+      "seconds_max_rank": 0.12568093836307526,
+      "global_tokens_per_second": 521447.4116247871
+    },
+    {
+      "step": 14,
+      "loss_rank0": 0.8359358310699463,
+      "seconds_max_rank": 0.1271040439605713,
+      "global_tokens_per_second": 515609.0865238702
+    },
+    {
+      "step": 15,
+      "loss_rank0": 0.5351664423942566,
+      "seconds_max_rank": 0.1303573828190565,
+      "global_tokens_per_second": 502740.99236072967
+    },
+    {
+      "step": 16,
+      "loss_rank0": 0.40868425369262695,
+      "seconds_max_rank": 0.12997028417885303,
+      "global_tokens_per_second": 504238.3373557562
+    },
+    {
+      "step": 17,
+      "loss_rank0": 0.3210127651691437,
+      "seconds_max_rank": 0.12910695560276508,
+      "global_tokens_per_second": 507610.1414833177
+    },
+    {
+      "step": 18,
+      "loss_rank0": 0.2357957363128662,
+      "seconds_max_rank": 0.12915749847888947,
+      "global_tokens_per_second": 507411.4996947833
+    },
+    {
+      "step": 19,
+      "loss_rank0": 0.16528722643852234,
+      "seconds_max_rank": 0.1276137512177229,
+      "global_tokens_per_second": 513549.6713687891
+    }
+  ],
+  "steady_state": {
+    "excluded_warmup_steps": 5,
+    "measured_steps": 15,
+    "seconds_median_max_rank": 0.1276137512177229,
+    "seconds_mean_max_rank": 0.12821810729801655,
+    "global_tokens_per_second_median": 513549.6713687891,
+    "global_tokens_per_second_mean": 511375.4916727478,
+    "loss_first_rank0": 1.0631487369537354,
+    "loss_last_rank0": 0.16528722643852234
+  },
+  "peak_allocated_bytes_max_rank": 35583092736,
+  "peak_reserved_bytes_max_rank": 36582719488,
+  "parameter_checksum_spread": 0.0
+}

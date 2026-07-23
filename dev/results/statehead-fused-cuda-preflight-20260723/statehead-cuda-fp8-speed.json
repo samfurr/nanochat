@@ -1,0 +1,223 @@
+{
+  "probe": "cuda_full_step_comparison",
+  "scientific_result": false,
+  "architecture": "statehead",
+  "repo_commit": "ada94afd6c526158331bc3a25785e9c48894d08b",
+  "torch_version": "2.9.1+cu128",
+  "cuda_version": "12.8",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "world_size": 1,
+  "compiled": true,
+  "seed": 1337,
+  "precision": "torch.bfloat16",
+  "fp8": true,
+  "fp8_linear_count": 25,
+  "gradient_finiteness_checked": false,
+  "config": {
+    "arch": "statehead",
+    "device_batch_size": 32,
+    "steps": 20,
+    "warmup_steps": 5,
+    "seed": 1337,
+    "sequence_length": 2048,
+    "layers": 12,
+    "model_width": 768,
+    "heads": 6,
+    "vocab_size": 32768,
+    "scan_chunk_size": 64,
+    "scan_backend": "cuda",
+    "fp8": true,
+    "eager": false,
+    "verify_gradients": false,
+    "output": "/workspace/statehead-preflight-results/statehead-cuda-fp8-speed.json"
+  },
+  "parameter_counts": {
+    "wte": 25165824,
+    "lm_head": 25165824,
+    "statehead_matrices": 35389440,
+    "statehead_vectors": 46080,
+    "transformer_matrices": 35389440,
+    "scalars": 50,
+    "total": 85767218
+  },
+  "scaling_params": 60555264,
+  "flops_per_token": 363414672,
+  "state_bytes_per_rank": 589824,
+  "optimizer_groups": [
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 25165824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 25165824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 24,
+      "parameters": 46080
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 12
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 12
+    },
+    {
+      "kind": "adamw",
+      "tensors": 3,
+      "parameters": 26
+    },
+    {
+      "kind": "muon",
+      "tensors": 12,
+      "parameters": 7077888
+    },
+    {
+      "kind": "muon",
+      "tensors": 12,
+      "parameters": 28311552
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "loss_rank0": 10.397631645202637,
+      "seconds_max_rank": 27.839045368134975,
+      "global_tokens_per_second": 2354.103710575276
+    },
+    {
+      "step": 1,
+      "loss_rank0": 7.44191837310791,
+      "seconds_max_rank": 0.12402239628136158,
+      "global_tokens_per_second": 528420.6882386204
+    },
+    {
+      "step": 2,
+      "loss_rank0": 3.974430799484253,
+      "seconds_max_rank": 0.12353574484586716,
+      "global_tokens_per_second": 530502.3261224339
+    },
+    {
+      "step": 3,
+      "loss_rank0": 1.7044918537139893,
+      "seconds_max_rank": 0.12382358498871326,
+      "global_tokens_per_second": 529269.1211127001
+    },
+    {
+      "step": 4,
+      "loss_rank0": 1.11046302318573,
+      "seconds_max_rank": 0.12366621382534504,
+      "global_tokens_per_second": 529942.6413471113
+    },
+    {
+      "step": 5,
+      "loss_rank0": 1.0297296047210693,
+      "seconds_max_rank": 0.12377690710127354,
+      "global_tokens_per_second": 529468.7154072999
+    },
+    {
+      "step": 6,
+      "loss_rank0": 23.720064163208008,
+      "seconds_max_rank": 0.12429678626358509,
+      "global_tokens_per_second": 527254.1790503229
+    },
+    {
+      "step": 7,
+      "loss_rank0": 0.9107215404510498,
+      "seconds_max_rank": 0.12404651567339897,
+      "global_tokens_per_second": 528317.9430250921
+    },
+    {
+      "step": 8,
+      "loss_rank0": 0.9253147840499878,
+      "seconds_max_rank": 0.12408536486327648,
+      "global_tokens_per_second": 528152.5349279577
+    },
+    {
+      "step": 9,
+      "loss_rank0": 0.8735164403915405,
+      "seconds_max_rank": 0.12385953962802887,
+      "global_tokens_per_second": 529115.4819145597
+    },
+    {
+      "step": 10,
+      "loss_rank0": 0.7860550880432129,
+      "seconds_max_rank": 0.1241060197353363,
+      "global_tokens_per_second": 528064.6348965146
+    },
+    {
+      "step": 11,
+      "loss_rank0": 0.6831601858139038,
+      "seconds_max_rank": 0.12405852787196636,
+      "global_tokens_per_second": 528266.7876539363
+    },
+    {
+      "step": 12,
+      "loss_rank0": 0.5500040054321289,
+      "seconds_max_rank": 0.12384527549147606,
+      "global_tokens_per_second": 529176.4238879719
+    },
+    {
+      "step": 13,
+      "loss_rank0": 0.40244999527931213,
+      "seconds_max_rank": 0.123878488317132,
+      "global_tokens_per_second": 529034.547404439
+    },
+    {
+      "step": 14,
+      "loss_rank0": 0.27513837814331055,
+      "seconds_max_rank": 0.12389241717755795,
+      "global_tokens_per_second": 528975.0696047546
+    },
+    {
+      "step": 15,
+      "loss_rank0": 0.17953942716121674,
+      "seconds_max_rank": 0.12460884265601635,
+      "global_tokens_per_second": 525933.7828930217
+    },
+    {
+      "step": 16,
+      "loss_rank0": 0.1182548850774765,
+      "seconds_max_rank": 0.124920554459095,
+      "global_tokens_per_second": 524621.4306666374
+    },
+    {
+      "step": 17,
+      "loss_rank0": 0.08065523207187653,
+      "seconds_max_rank": 0.12566276639699936,
+      "global_tokens_per_second": 521522.8176097586
+    },
+    {
+      "step": 18,
+      "loss_rank0": 0.0577327236533165,
+      "seconds_max_rank": 0.12492119893431664,
+      "global_tokens_per_second": 524618.7241163024
+    },
+    {
+      "step": 19,
+      "loss_rank0": 0.042885974049568176,
+      "seconds_max_rank": 0.12508709356188774,
+      "global_tokens_per_second": 523922.95746783493
+    }
+  ],
+  "steady_state": {
+    "excluded_warmup_steps": 5,
+    "measured_steps": 15,
+    "seconds_median_max_rank": 0.12408536486327648,
+    "seconds_mean_max_rank": 0.12433641987542311,
+    "global_tokens_per_second_median": 528152.5349279577,
+    "global_tokens_per_second_mean": 527096.4020350936,
+    "loss_first_rank0": 1.0297296047210693,
+    "loss_last_rank0": 0.042885974049568176
+  },
+  "peak_allocated_bytes_max_rank": 24877601792,
+  "peak_reserved_bytes_max_rank": 26763853824,
+  "parameter_checksum_spread": 0.0
+}

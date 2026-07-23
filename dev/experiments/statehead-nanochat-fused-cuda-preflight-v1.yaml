@@ -1,13 +1,21 @@
 experiment_id: statehead-nanochat-fused-cuda-preflight-v1
-status: prepared_cuda_unverified
+status: completed_mixed
 purpose: native_cuda_correctness_fp8_stability_and_full_step_speed_gate
 scientific_result: false
-repo_commit: b952753243ea14ac391d617244f2fbd52ba0a487
+model_code_commit: b952753243ea14ac391d617244f2fbd52ba0a487
+tested_repo_commit: ada94afd6c526158331bc3a25785e9c48894d08b
 seed: 1337
 hardware: 1x_NVIDIA_H100_80GB_HBM3
 container_image: runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404
+torch_version: 2.9.1+cu128
+cuda_toolkit: "12.8"
+driver_version: "570.211.01"
+kernels_version: 0.11.7
+flash_attention_3_loaded: true
 maximum_runtime_minutes: 30
 terminate_guard: required
+actual_gpu_charge_usd: 0.6708058195
+results_directory: dev/results/statehead-fused-cuda-preflight-20260723
 architecture: statehead
 layers: 12
 model_width: 768
@@ -60,11 +68,11 @@ speed_commands:
   - ARCH=statehead SCAN_BACKEND=pytorch FP8=0 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=statehead-pytorch-bf16-speed bash runs/statehead_cuda_preflight.sh
   - ARCH=statehead SCAN_BACKEND=cuda FP8=0 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=statehead-cuda-bf16-speed bash runs/statehead_cuda_preflight.sh
   - ARCH=statehead SCAN_BACKEND=cuda FP8=1 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=statehead-cuda-fp8-speed bash runs/statehead_cuda_preflight.sh
-  - ARCH=gpt SCAN_BACKEND=pytorch FP8=0 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=gpt-bf16-speed bash runs/statehead_cuda_preflight.sh
-  - ARCH=gpt SCAN_BACKEND=pytorch FP8=1 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=gpt-fp8-speed bash runs/statehead_cuda_preflight.sh
+  - ARCH=gpt SCAN_BACKEND=pytorch FP8=0 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=gpt-fa3-bf16-speed bash runs/statehead_cuda_preflight.sh
+  - ARCH=gpt SCAN_BACKEND=pytorch FP8=1 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=gpt-fa3-fp8-speed bash runs/statehead_cuda_preflight.sh
 stability_commands:
   - ARCH=statehead SCAN_BACKEND=cuda FP8=1 PREFLIGHT_STEPS=50 WARMUP_STEPS=5 VERIFY_GRADIENTS=1 PREFLIGHT_TAG=statehead-cuda-fp8-stability bash runs/statehead_cuda_preflight.sh
-  - ARCH=gpt SCAN_BACKEND=pytorch FP8=1 PREFLIGHT_STEPS=50 WARMUP_STEPS=5 VERIFY_GRADIENTS=1 PREFLIGHT_TAG=gpt-fp8-stability bash runs/statehead_cuda_preflight.sh
+  - ARCH=gpt SCAN_BACKEND=pytorch FP8=1 PREFLIGHT_STEPS=50 WARMUP_STEPS=5 VERIFY_GRADIENTS=1 PREFLIGHT_TAG=gpt-fa3-fp8-stability bash runs/statehead_cuda_preflight.sh
 success_gates:
   cuda_compilation:
     requirement: native_extension_builds_and_loads_with_nvcc
@@ -82,19 +90,62 @@ success_gates:
       - statehead_cuda_fp8_vs_statehead_compiled_pytorch_bf16
       - statehead_cuda_fp8_vs_gpt_compiled_fp8
       - statehead_cuda_bf16_vs_gpt_compiled_bf16
-unverified_candidates:
-  - precision: bfloat16
-    fp8: false
-    scan_backend: cuda
-  - precision: bfloat16
-    fp8: tensorwise_dynamic
-    fp8_forward_operands: e4m3fn
-    fp8_backward_grad_output: e5m2
-    scan_backend: cuda
-claims_not_authorized_without_results:
-  - cuda_forward_parity
-  - cuda_gradient_parity
-  - compiled_cuda_compatibility
-  - fp8_learning_parity
-  - speedup_over_pytorch_reference
-  - speedup_or_parity_vs_flash_attention_gpt
+gate_results:
+  cuda_compilation:
+    status: pass
+    artifact: native-cuda-build-v2.log
+  float32_numerical_and_gradient_parity:
+    status: pass
+    tests: 61
+    artifact: pytest-fp32-v2.log
+  bfloat16_numerical_and_gradient_parity:
+    status: pass
+    tests: 61
+    artifact: pytest-bf16-v2.log
+  compiled_full_model_parity:
+    status: pass
+    compared: native_cuda_vs_compiled_pytorch
+  statehead_fp8_short_stability:
+    status: pass
+    steps: 50
+    every_parameter_gradient_checked_each_step: true
+    first_loss: 10.397631645202637
+    final_loss: 0.0016724640736356378
+  gpt_fp8_short_stability_control:
+    status: pass
+    steps: 50
+    every_parameter_gradient_checked_each_step: true
+    first_loss: 10.39763355255127
+    final_loss: 0.004182510077953339
+  speed_vs_compiled_pytorch_statehead:
+    status: fail
+    native_bfloat16_delta_percent: -3.229629290319802
+    native_fp8_delta_percent: -6.893967399685197
+  speed_vs_flash_attention_3_gpt:
+    status: pass_at_exact_probe_shape
+    native_bfloat16_vs_gpt_bfloat16_percent: 7.419452963839701
+    native_fp8_vs_gpt_fp8_percent: 2.8435153157136517
+speed_results:
+  statehead_compiled_pytorch_bfloat16:
+    median_tokens_per_second: 567259.1991919673
+    peak_allocated_gib: 40.43831777572632
+  statehead_native_cuda_bfloat16:
+    median_tokens_per_second: 548938.8299428299
+    peak_allocated_gib: 13.114707946777344
+  statehead_native_cuda_fp8:
+    median_tokens_per_second: 528152.5349279577
+    peak_allocated_gib: 23.169072151184082
+  gpt_flash_attention_3_bfloat16:
+    median_tokens_per_second: 511023.6691743511
+    peak_allocated_gib: 27.399721145629883
+  gpt_flash_attention_3_fp8:
+    median_tokens_per_second: 513549.6713687891
+    peak_allocated_gib: 33.13933753967285
+claims:
+  cuda_forward_parity: demonstrated_by_tests
+  cuda_gradient_parity: demonstrated_by_tests
+  compiled_cuda_compatibility: demonstrated_by_tests_and_full_step_runs
+  short_run_fp8_numerical_stability: demonstrated_for_50_fixed_synthetic_steps
+  fp8_dataset_learning_parity: not_demonstrated
+  speedup_over_pytorch_reference: false
+  speedup_over_flash_attention_gpt: true_only_for_this_exact_single_h100_probe
