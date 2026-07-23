@@ -128,7 +128,13 @@ def statehead_scan_parallel(a, u, o, initial_state, chunk_size=64):
 class StateHeadBank(nn.Module):
     def __init__(self, config):
         super().__init__()
-        if config.scan_backend not in ("auto", "pytorch", "cuda", "cuda_projected"):
+        if config.scan_backend not in (
+            "auto",
+            "pytorch",
+            "cuda",
+            "cuda_projected",
+            "cuda_projected_gates",
+        ):
             raise ValueError(f"Unknown StateHead scan backend: {config.scan_backend}")
         if config.projection_tile_rows < 1:
             raise ValueError("StateHead projection_tile_rows must be positive")
@@ -174,6 +180,19 @@ class StateHeadBank(nn.Module):
                 self.n_head,
                 self.chunk_size,
                 self.projection_tile_rows,
+            )
+            y = y.reshape(batch_size, sequence_len, n_embd)
+            return self.out_proj(y), final_state
+        if scan_impl == "cuda_projected_gates":
+            from nanochat.statehead_cuda import statehead_projected_gates_cuda
+
+            y, final_state = statehead_projected_gates_cuda(
+                x,
+                self.gate.weight.to(dtype=x.dtype),
+                self.gate_bias.to(dtype=x.dtype),
+                state,
+                self.n_head,
+                self.chunk_size,
             )
             y = y.reshape(batch_size, sequence_len, n_embd)
             return self.out_proj(y), final_state

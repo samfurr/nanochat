@@ -67,6 +67,30 @@ __global__ void statehead_activate_gates_kernel(
 }
 
 template <typename scalar_t>
+__global__ void statehead_activate_gate_kernel(
+    const scalar_t* __restrict__ raw_gate,
+    const scalar_t* __restrict__ gate_bias,
+    scalar_t* __restrict__ activated_gates,
+    int64_t total_states,
+    int64_t gate_stride,
+    int64_t gate) {
+  const int64_t item =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (item >= total_states) {
+    return;
+  }
+
+  const int64_t token = item / gate_stride;
+  const int64_t state = item - token * gate_stride;
+  const float raw = static_cast<float>(raw_gate[item]) +
+      static_cast<float>(gate_bias[gate * gate_stride + state]);
+  const float activated = gate == 2 ? tanhf(raw) : sigmoidf(raw);
+  activated_gates[
+      token * 4 * gate_stride + gate * gate_stride + state] =
+      static_cast<scalar_t>(activated);
+}
+
+template <typename scalar_t>
 __device__ __forceinline__ float load_gate(
     const scalar_t* gates,
     int64_t batch,
@@ -549,6 +573,61 @@ void project_activate_tiles(
   }
 }
 
+template <typename scalar_t, cudaDataType_t kDataType>
+void project_activate_gate(
+    const torch::Tensor& x,
+    const torch::Tensor& gate_weight,
+    const torch::Tensor& gate_bias,
+    torch::Tensor& activated_gates,
+    torch::Tensor& raw_buffer,
+    const c10::cuda::CUDAStream& stream,
+    cudaEvent_t done,
+    int64_t gate,
+    int64_t total_rows,
+    int64_t n_embd) {
+  const c10::cuda::CUDAStreamGuard stream_guard(stream);
+  const auto handle = at::cuda::getCurrentCUDABlasHandle();
+  check_cublas(cublasSetStream(handle, stream.stream()), "cublasSetStream");
+  const float alpha = 1.0f;
+  const float beta = 0.0f;
+  check_cublas(
+      cublasGemmEx(
+          handle,
+          CUBLAS_OP_T,
+          CUBLAS_OP_N,
+          n_embd,
+          total_rows,
+          n_embd,
+          &alpha,
+          gate_weight.data_ptr<scalar_t>() + gate * n_embd * n_embd,
+          kDataType,
+          n_embd,
+          x.data_ptr<scalar_t>(),
+          kDataType,
+          n_embd,
+          &beta,
+          raw_buffer.data_ptr<scalar_t>(),
+          kDataType,
+          n_embd,
+          CUBLAS_COMPUTE_32F,
+          CUBLAS_GEMM_DEFAULT_TENSOR_OP),
+      "cublasGemmEx");
+
+  const int64_t total_states = total_rows * n_embd;
+  const int blocks = static_cast<int>(
+      (total_states + kForwardThreads - 1) / kForwardThreads);
+  statehead_activate_gate_kernel<scalar_t>
+      <<<blocks, kForwardThreads, 0, stream.stream()>>>(
+          raw_buffer.data_ptr<scalar_t>(),
+          gate_bias.data_ptr<scalar_t>(),
+          activated_gates.data_ptr<scalar_t>(),
+          total_states,
+          n_embd,
+          gate);
+  C10_CUDA_KERNEL_LAUNCH_CHECK();
+  C10_CUDA_CHECK(cudaEventRecord(done, stream.stream()));
+}
+
 }  // namespace
 
 std::vector<torch::Tensor> statehead_forward_cuda(
@@ -714,6 +793,125 @@ std::vector<torch::Tensor> statehead_forward_projected_cuda(
   for (int buffer = 0; buffer < 2; ++buffer) {
     C10_CUDA_CHECK(cudaEventDestroy(projection_done[buffer]));
     C10_CUDA_CHECK(cudaEventDestroy(activation_done[buffer]));
+  }
+
+  auto result = scan_activated_gates(activated_gates, initial_state, chunk_size);
+  result.push_back(activated_gates);
+  return result;
+}
+
+std::vector<torch::Tensor> statehead_forward_projected_gates_cuda(
+    torch::Tensor x,
+    torch::Tensor gate_weight,
+    torch::Tensor gate_bias,
+    torch::Tensor initial_state,
+    int64_t n_head,
+    int64_t chunk_size) {
+  TORCH_CHECK(x.is_cuda(), "x must be a CUDA tensor");
+  TORCH_CHECK(gate_weight.is_cuda(), "gate_weight must be a CUDA tensor");
+  TORCH_CHECK(gate_bias.is_cuda(), "gate_bias must be a CUDA tensor");
+  TORCH_CHECK(initial_state.is_cuda(), "initial_state must be a CUDA tensor");
+  TORCH_CHECK(
+      x.device() == gate_weight.device() &&
+          x.device() == gate_bias.device() &&
+          x.device() == initial_state.device(),
+      "devices must match");
+  TORCH_CHECK(x.is_contiguous(), "x must be contiguous");
+  TORCH_CHECK(gate_weight.is_contiguous(), "gate_weight must be contiguous");
+  TORCH_CHECK(gate_bias.is_contiguous(), "gate_bias must be contiguous");
+  TORCH_CHECK(initial_state.is_contiguous(), "initial_state must be contiguous");
+  TORCH_CHECK(x.dim() == 3, "x must have shape [B, T, D]");
+  TORCH_CHECK(gate_weight.dim() == 2, "gate_weight must have shape [4D, D]");
+  TORCH_CHECK(initial_state.dim() == 3, "initial_state must have shape [B, H, Dh]");
+  TORCH_CHECK(x.size(1) > 0, "sequence length must be positive");
+  TORCH_CHECK(n_head > 0, "n_head must be positive");
+  TORCH_CHECK(x.size(2) % n_head == 0, "n_head must divide model width");
+  TORCH_CHECK(
+      gate_weight.size(0) == 4 * x.size(2) &&
+          gate_weight.size(1) == x.size(2),
+      "gate_weight must have shape [4D, D]");
+  TORCH_CHECK(gate_bias.numel() == 4 * x.size(2), "gate_bias must have 4D elements");
+  TORCH_CHECK(initial_state.size(0) == x.size(0), "batch sizes must match");
+  TORCH_CHECK(initial_state.size(1) == n_head, "initial_state head count mismatch");
+  TORCH_CHECK(
+      initial_state.size(2) == x.size(2) / n_head,
+      "initial_state head dimension mismatch");
+  TORCH_CHECK(
+      x.scalar_type() == gate_weight.scalar_type() &&
+          x.scalar_type() == gate_bias.scalar_type() &&
+          x.scalar_type() == initial_state.scalar_type(),
+      "dtypes must match");
+  TORCH_CHECK(
+      x.scalar_type() == torch::kFloat ||
+          x.scalar_type() == torch::kHalf ||
+          x.scalar_type() == torch::kBFloat16,
+      "supported dtypes are float32, float16, and bfloat16");
+  TORCH_CHECK(
+      chunk_size > 0 && chunk_size <= kMaxChunkSize,
+      "invalid chunk_size");
+
+  const c10::cuda::CUDAGuard device_guard(x.device());
+  const int64_t batch = x.size(0);
+  const int64_t sequence_len = x.size(1);
+  const int64_t n_embd = x.size(2);
+  const int64_t head_dim = n_embd / n_head;
+  const int64_t total_rows = batch * sequence_len;
+  auto activated_gates = torch::empty(
+      {batch, sequence_len, 4, n_head, head_dim}, x.options());
+  std::array<torch::Tensor, 4> raw_buffers = {
+      torch::empty({total_rows, n_embd}, x.options()),
+      torch::empty({total_rows, n_embd}, x.options()),
+      torch::empty({total_rows, n_embd}, x.options()),
+      torch::empty({total_rows, n_embd}, x.options()),
+  };
+
+  const auto current_stream = c10::cuda::getCurrentCUDAStream();
+  std::array<c10::cuda::CUDAStream, 4> gate_streams = {
+      c10::cuda::getStreamFromPool(false, x.get_device()),
+      c10::cuda::getStreamFromPool(false, x.get_device()),
+      c10::cuda::getStreamFromPool(false, x.get_device()),
+      c10::cuda::getStreamFromPool(false, x.get_device()),
+  };
+  cudaEvent_t inputs_ready;
+  std::array<cudaEvent_t, 4> gate_done;
+  C10_CUDA_CHECK(cudaEventCreateWithFlags(&inputs_ready, cudaEventDisableTiming));
+  for (int gate = 0; gate < 4; ++gate) {
+    C10_CUDA_CHECK(
+        cudaEventCreateWithFlags(&gate_done[gate], cudaEventDisableTiming));
+  }
+  C10_CUDA_CHECK(cudaEventRecord(inputs_ready, current_stream.stream()));
+
+  for (int64_t gate = 0; gate < 4; ++gate) {
+    C10_CUDA_CHECK(
+        cudaStreamWaitEvent(gate_streams[gate].stream(), inputs_ready, 0));
+    switch (x.scalar_type()) {
+      case torch::kFloat:
+        project_activate_gate<float, CUDA_R_32F>(
+            x, gate_weight, gate_bias, activated_gates, raw_buffers[gate],
+            gate_streams[gate], gate_done[gate], gate, total_rows, n_embd);
+        break;
+      case torch::kHalf:
+        project_activate_gate<at::Half, CUDA_R_16F>(
+            x, gate_weight, gate_bias, activated_gates, raw_buffers[gate],
+            gate_streams[gate], gate_done[gate], gate, total_rows, n_embd);
+        break;
+      case torch::kBFloat16:
+        project_activate_gate<at::BFloat16, CUDA_R_16BF>(
+            x, gate_weight, gate_bias, activated_gates, raw_buffers[gate],
+            gate_streams[gate], gate_done[gate], gate, total_rows, n_embd);
+        break;
+      default:
+        TORCH_CHECK(false, "unsupported projection dtype");
+    }
+  }
+
+  for (int gate = 0; gate < 4; ++gate) {
+    C10_CUDA_CHECK(
+        cudaStreamWaitEvent(current_stream.stream(), gate_done[gate], 0));
+  }
+  C10_CUDA_CHECK(cudaEventDestroy(inputs_ready));
+  for (int gate = 0; gate < 4; ++gate) {
+    C10_CUDA_CHECK(cudaEventDestroy(gate_done[gate]));
   }
 
   auto result = scan_activated_gates(activated_gates, initial_state, chunk_size);

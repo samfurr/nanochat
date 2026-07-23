@@ -360,7 +360,10 @@ def test_native_cuda_scan_compiles_fullgraph():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
-@pytest.mark.parametrize("native_backend", ["cuda", "cuda_projected"])
+@pytest.mark.parametrize(
+    "native_backend",
+    ["cuda", "cuda_projected", "cuda_projected_gates"],
+)
 def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch(
     native_backend,
 ):

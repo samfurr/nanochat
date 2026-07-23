@@ -55,7 +55,7 @@ def main():
     parser.add_argument("--scan-chunk-size", type=int, default=64)
     parser.add_argument(
         "--scan-backend",
-        choices=["pytorch", "cuda", "cuda_projected"],
+        choices=["pytorch", "cuda", "cuda_projected", "cuda_projected_gates"],
         default="pytorch",
     )
     parser.add_argument(
@@ -125,7 +125,11 @@ def main():
     model.init_weights()
     original_model = model
 
-    if args.arch == "statehead" and args.scan_backend in ("cuda", "cuda_projected"):
+    if args.arch == "statehead" and args.scan_backend in (
+        "cuda",
+        "cuda_projected",
+        "cuda_projected_gates",
+    ):
         from nanochat.statehead_cuda import preload_statehead_cuda
 
         preload_statehead_cuda()

@@ -132,6 +132,50 @@ def _statehead_projected_forward_fake(
     return output, torch.empty_like(initial_state), chunk_initials, activated_gates
 
 
+@torch.library.custom_op(
+    "nanochat::statehead_projected_gates_forward",
+    mutates_args=(),
+)
+def _statehead_projected_gates_forward(
+    x: torch.Tensor,
+    gate_weight: torch.Tensor,
+    gate_bias: torch.Tensor,
+    initial_state: torch.Tensor,
+    n_head: int,
+    chunk_size: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    return tuple(
+        _load_extension().forward_projected_gates(
+            x,
+            gate_weight,
+            gate_bias,
+            initial_state,
+            n_head,
+            chunk_size,
+        )
+    )
+
+
+@_statehead_projected_gates_forward.register_fake
+def _statehead_projected_gates_forward_fake(
+    x: torch.Tensor,
+    gate_weight: torch.Tensor,
+    gate_bias: torch.Tensor,
+    initial_state: torch.Tensor,
+    n_head: int,
+    chunk_size: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    return _statehead_projected_forward_fake(
+        x,
+        gate_weight,
+        gate_bias,
+        initial_state,
+        n_head,
+        chunk_size,
+        1,
+    )
+
+
 def _setup_projected_forward_context(ctx, inputs, output):
     x, gate_weight, gate_bias, _initial_state, _n_head, chunk_size, _tile_rows = inputs
     _y, _final_state, chunk_initials, activated_gates = output
@@ -182,6 +226,38 @@ def _projected_forward_backward(
 _statehead_projected_forward.register_autograd(
     _projected_forward_backward,
     setup_context=_setup_projected_forward_context,
+)
+
+
+def _setup_projected_gates_forward_context(ctx, inputs, output):
+    x, gate_weight, gate_bias, _initial_state, _n_head, chunk_size = inputs
+    _y, _final_state, chunk_initials, activated_gates = output
+    ctx.mark_non_differentiable(chunk_initials, activated_gates)
+    ctx.save_for_backward(x, gate_weight, activated_gates, chunk_initials)
+    ctx.gate_bias_shape = gate_bias.shape
+    ctx.chunk_size = chunk_size
+
+
+def _projected_gates_forward_backward(
+    ctx,
+    grad_y,
+    grad_final_state,
+    grad_chunk_initials,
+    grad_activated_gates,
+):
+    gradients = _projected_forward_backward(
+        ctx,
+        grad_y,
+        grad_final_state,
+        grad_chunk_initials,
+        grad_activated_gates,
+    )
+    return gradients[:-1]
+
+
+_statehead_projected_gates_forward.register_autograd(
+    _projected_gates_forward_backward,
+    setup_context=_setup_projected_gates_forward_context,
 )
 
 
@@ -325,6 +401,48 @@ def statehead_projected_cuda(
             n_head,
             chunk_size,
             projection_tile_rows,
+        )
+    )
+    return output, final_state
+
+
+def statehead_projected_gates_cuda(
+    x,
+    gate_weight,
+    gate_bias,
+    initial_state,
+    n_head,
+    chunk_size=64,
+):
+    """Project the four gate blocks concurrently, activate, then scan."""
+    tensors = (x, gate_weight, gate_bias, initial_state)
+    if not all(tensor.is_cuda for tensor in tensors):
+        raise ValueError("statehead_projected_gates_cuda requires CUDA tensors")
+    if x.ndim != 3:
+        raise ValueError("x must have shape [B, T, D]")
+    batch, _sequence_len, n_embd = x.shape
+    if n_head < 1 or n_embd % n_head != 0:
+        raise ValueError("n_head must divide the model width")
+    if gate_weight.shape != (4 * n_embd, n_embd):
+        raise ValueError("gate_weight must have shape [4D, D]")
+    if gate_bias.numel() != 4 * n_embd:
+        raise ValueError("gate_bias must have 4D elements")
+    if initial_state.shape != (batch, n_head, n_embd // n_head):
+        raise ValueError("initial_state must have shape [B, H, Dh]")
+    if chunk_size < 1 or chunk_size > 64:
+        raise ValueError("native CUDA scan requires 1 <= chunk_size <= 64")
+    x = x.contiguous()
+    gate_weight = gate_weight.to(dtype=x.dtype, device=x.device).contiguous()
+    gate_bias = gate_bias.to(dtype=x.dtype, device=x.device).contiguous()
+    initial_state = initial_state.to(dtype=x.dtype, device=x.device).contiguous()
+    output, final_state, _chunk_initials, _activated_gates = (
+        _statehead_projected_gates_forward(
+            x,
+            gate_weight,
+            gate_bias,
+            initial_state,
+            n_head,
+            chunk_size,
         )
     )
     return output, final_state

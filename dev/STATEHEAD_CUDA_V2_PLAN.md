@@ -324,3 +324,33 @@ Acceptance gates:
 Reject v7 if cuBLAS tiling loses more GEMM efficiency than the activation
 overlap saves, if multistream execution prevents graph compilation/capture, or
 if its memory/workspace overhead materially erodes v4's 13.15 GiB advantage.
+
+### v7 measurement and v8 gate-parallel follow-up
+
+On the same H100 and commit, the first short d12/768/T2048/batch-32 BF16
+measurements were:
+
+- CUDA v4 control: 948,838 median full-step tok/s;
+- v7, four 16,384-row tiles: 934,513 tok/s, 1.51% below v4;
+- v7, two 32,768-row tiles: 940,540 tok/s, 0.87% below v4.
+
+The complete BF16 suite reached 90 passes with only the two known GPT/FA3 CPU
+checkpoint failures; focused FP32 and BF16 projected/native CUDA parity each
+passed 48 tests. Nsight confirms that v7 launches 72 activation tiles across
+three measured optimizer steps, totaling 5.72 ms per step. Row tiling therefore
+does not eliminate the activation work; it only tries to hide it, and the
+smaller GEMMs plus stream/event overhead exceed the overlap benefit.
+
+The next bounded v8 probe uses the gate-major projection layout already present
+in the checkpoint. It splits the contiguous `[4D,D]` weight into four `[D,D]`
+gate blocks, launches the four projections on independent cuBLAS streams, and
+immediately applies each gate's sigmoid or tanh on that same stream while the
+other projections remain in flight. Each activation writes directly to its
+gate block in `[B,T,4,H,Dh]`; there is no runtime transpose or checkpoint
+conversion. The CUDA v4 and row-tiled v7 backends remain separate controls.
+
+Accept v8 only if it passes the same FP32/BF16 compiled full-model parity and
+finite-gradient gates and beats the same-host v4 full-step control. If four
+`[D,D]` GEMMs lose more tensor-core efficiency than concurrency recovers,
+reject it and retain v4. A two-group `[2D,D]` split is the only justified
+follow-up before moving to a CUTLASS/cuBLASLt custom mixed-activation epilogue.
