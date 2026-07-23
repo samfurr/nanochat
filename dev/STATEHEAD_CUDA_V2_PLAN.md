@@ -359,3 +359,16 @@ The four-way v8 probe passed 49 focused BF16 tests but measured only
 884,133 tok/s, 6.82% below the same-host v4 control, and peaked at 14.15 GiB.
 It is rejected. The v9 follow-up keeps the same explicit experimental backend
 but uses exactly two contiguous `[2D,D]` projection groups and two streams.
+
+The two-group v9 probe also passed 49 focused BF16 tests but fell further to
+855,941 tok/s, 9.79% below v4, with the same 14.15 GiB peak allocation. This
+closes projection splitting in either the row or output-feature dimension:
+the tensor-core efficiency loss is larger than any activation overlap.
+
+The next v10 probe returns to the CUDA v4 full projection and scan. It changes
+only the standalone mixed activation pass to use CUDA's fast exponential
+intrinsic, expressing tanh as `2 * sigmoid(2x) - 1`. Because the activated
+values are stored in BF16 for the production path, the hypothesis is that the
+extra transcendental precision is not observable after storage while the SFU
+work becomes cheaper. FP32 forward/gradient tolerances remain a hard gate; any
+parity failure or full-step regression requires an immediate revert.

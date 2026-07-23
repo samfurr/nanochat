@@ -29,7 +29,11 @@ void check_cublas(cublasStatus_t status, const char* operation) {
 }
 
 __device__ __forceinline__ float sigmoidf(float value) {
-  return 1.0f / (1.0f + expf(-value));
+  return 1.0f / (1.0f + __expf(-value));
+}
+
+__device__ __forceinline__ float fast_tanhf(float value) {
+  return 2.0f * sigmoidf(2.0f * value) - 1.0f;
 }
 
 template <typename scalar_t>
@@ -57,7 +61,7 @@ __global__ void statehead_activate_gates_kernel(
           static_cast<float>(gates[gate_base + gate_stride]) +
           static_cast<float>(gate_bias[gate_stride + state])));
   activated_gates[gate_base + 2 * gate_stride] = static_cast<scalar_t>(
-      tanhf(
+      fast_tanhf(
           static_cast<float>(gates[gate_base + 2 * gate_stride]) +
           static_cast<float>(gate_bias[2 * gate_stride + state])));
   activated_gates[gate_base + 3 * gate_stride] = static_cast<scalar_t>(
@@ -88,7 +92,7 @@ __global__ void statehead_activate_gate_group_kernel(
   const int64_t state = group_feature % gate_stride;
   const float raw = static_cast<float>(raw_gates[item]) +
       static_cast<float>(gate_bias[gate * gate_stride + state]);
-  const float activated = gate == 2 ? tanhf(raw) : sigmoidf(raw);
+  const float activated = gate == 2 ? fast_tanhf(raw) : sigmoidf(raw);
   activated_gates[
       token * 4 * gate_stride + gate * gate_stride + state] =
       static_cast<scalar_t>(activated);
