@@ -1,0 +1,57 @@
+experiment_id: statehead-nanochat-d12-controlled-v1
+status: blocked_on_cuda_preflight_and_paid_run_approval
+repo_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+architecture: statehead
+comparison_run: gpt-d12-controlled-v1
+seed: 1337
+precision: bfloat16
+fp8: false
+compile: true
+layers: 12
+model_width: 768
+state_heads: 6
+head_width: 128
+mlp: none
+attention: none
+scan_backend: pytorch_parallel
+scan_chunk_size: 64
+scan_accumulation: float32
+retention_bias: 2.0
+learned_initial_state: true
+state_reset: every_independent_training_row
+hard_reset_at_internal_bos: false
+token_smear: same_as_gpt_baseline
+resid_lambdas: same_as_gpt_baseline
+x0_reinjection: same_as_gpt_baseline
+backout: same_as_gpt_baseline
+value_write_embeddings: false
+sequence_length: 2048
+global_batch_tokens: 524288
+gpt_device_batch_size: 32
+statehead_device_batch_size: FILL_FROM_CUDA_PREFLIGHT
+optimizer: nanochat_muon_adamw
+headwise_muon: false
+training_steps: 2520
+total_tokens: 1321205760
+token_horizon_rule: fixed_to_gpt_d12_12x_scaling_params_floor_to_full_global_batches
+gpt_scaling_params: 110100912
+statehead_scaling_params: 60555264
+data_manifest_or_shards:
+  dataset: karpathy/climbmix-400b-shuffle
+  train_shards: shard_00000.parquet_through_shard_00169.parquet
+  validation_shard: shard_06542.parquet
+  tokenizer_training_chars: 2000000000
+  tokenizer_vocab_size: 32768
+eval_schedule:
+  validation_bpb_every_steps: 250
+  validation_tokens: 41943040
+  core_during_training: false
+  final_core_max_per_task: -1
+primary_endpoint: final_core
+secondary_endpoints:
+  - val_bpb
+  - per_task_core
+  - total_training_time
+  - tokens_per_second
+  - peak_vram
+checkpoint_selection: predetermined_final_step

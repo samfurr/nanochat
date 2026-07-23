@@ -389,6 +389,10 @@ StateHead intentionally receives the same token horizon rather than its own para
 
 ### Added preparation artifacts
 
+The tested implementation and preflight code are pinned by local commit
+`2944ed65dfb26809073e7b3446ff6255513c83d4` on branch
+`codex/statehead-nanochat`. Nothing has been pushed remotely.
+
 - `dev/statehead_cuda_preflight.py`: full-shape synthetic-token CUDA/DDP feasibility probe for compiled forward/backward and the real Muon/AdamW grouping. It records loss/gradient finiteness, step/compile timing, global throughput, max-rank peak VRAM, optimizer groups, and cross-rank parameter checksum spread. It is explicitly not a scientific learning result.
 - `runs/statehead_cuda_preflight.sh`: module-mode launcher using BF16 and configurable world/device batch size.
 - `dev/experiments/statehead-nanochat-cuda-preflight-v1.yaml`: exact bounded one-H100 preflight plan using the pinned `runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404` image and a required 30-minute termination guard.

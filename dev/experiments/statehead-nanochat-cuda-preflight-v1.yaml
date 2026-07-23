@@ -1,0 +1,44 @@
+experiment_id: statehead-nanochat-cuda-preflight-v1
+purpose: infrastructure_feasibility_only
+scientific_result: false
+repo_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+seed: 1337
+precision: bfloat16
+fp8: false
+compile: true
+architecture: statehead
+layers: 12
+model_width: 768
+state_heads: 6
+head_width: 128
+mlp: none
+attention: none
+scan_backend: pytorch_parallel
+scan_chunk_size: 64
+scan_accumulation: float32
+sequence_length: 2048
+vocab_size: 32768
+synthetic_tokens: true
+device_batch_size: 1
+training_steps: 2
+optimizer: nanochat_muon_adamw
+headwise_muon: false
+initial_hardware: 1x_NVIDIA_H100_80GB_HBM3
+cloud_type: secure
+container_image: runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404
+maximum_runtime_minutes: 30
+terminate_guard: required
+capture:
+  - compile_and_step_time
+  - global_tokens_per_second
+  - peak_allocated_vram
+  - peak_reserved_vram
+  - finite_loss_and_gradients
+  - optimizer_parameter_groups
+  - cross_rank_parameter_checksum_spread
+success_criteria:
+  - process_exit_zero
+  - finite_loss_and_gradients
+  - two_optimizer_steps_complete
+  - peak_vram_recorded
+checkpoint_selection: none
