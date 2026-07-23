@@ -91,7 +91,26 @@ execution:
     delete_after_artifact_retrieval: true
   paid_run_approved: true
   launch_status: no_pod_created_capacity_unavailable
-  last_launch_attempt_utc: 2026-07-23
+  last_launch_attempt_utc: 2026-07-23T13:04:06Z
+  latest_launch_request:
+    gpu: NVIDIA_H100_80GB_HBM3
+    gpu_count: 8
+    cloud_type: secure
+    storage_type: pod_local_volume
+    storage_size_gb: 100
+    terminate_after_utc: 2026-07-23T14:01:25Z
+    requested_maximum_runtime_minutes: 59
+    outcome: exact_8xh100_instance_unavailable
+    pod_created: false
+    charge_usd: 0
+    attempted_scheduler_scopes:
+      - global
+      - AP-IN-1
+      - EUR-IS-3
+      - AP-JP-1
+      - CA-MTL-1
+      - EUR-NO-2
+      - US-MO-1
   last_launch_attempts:
     - data_center: CA-MTL-1
       outcome: network_volume_unsupported
@@ -112,3 +131,4 @@ execution:
     network_volumes: 0
     spend_per_hour_usd: 0
     observed_balance_delta_usd: 0
+    balance_usd: 206.0076425183

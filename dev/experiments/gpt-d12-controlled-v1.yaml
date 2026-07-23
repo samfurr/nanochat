@@ -44,3 +44,5 @@ execution_script_sha256: b3a0056b4d9ac0c4f534792f684a9a5cd6c2ebe5cf14dda77a2bf0f
 execution_arch_selector: gpt
 paid_run_approved: true
 launch_status: no_pod_created_capacity_unavailable
+last_launch_attempt_utc: 2026-07-23T13:04:06Z
+last_launch_attempt_record: dev/experiments/statehead-nanochat-d12-controlled-v1.yaml
