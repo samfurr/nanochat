@@ -1,9 +1,11 @@
 experiment_id: statehead-nanochat-d12-controlled-v1
-status: approved_waiting_for_exact_8xh100_capacity
-model_code_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+status: approved_vast_statehead_only_launch_pending
+model_code_commit: b952753243ea14ac391d617244f2fbd52ba0a487
 architecture: statehead
 comparison_run: gpt-d12-controlled-v1
 comparison_manifest: dev/experiments/gpt-d12-controlled-v1.yaml
+approved_architecture_scope: statehead_only
+gpt_control_source: existing_known_gpt_results
 seed: 1337
 precision: bfloat16
 fp8: false
@@ -66,7 +68,7 @@ secondary_endpoints:
 checkpoint_selection: predetermined_final_step
 execution:
   script: runs/statehead_d12_controlled.sh
-  script_sha256: b3a0056b4d9ac0c4f534792f684a9a5cd6c2ebe5cf14dda77a2bf0ff675be540
+  script_sha256: 21ef5b3022c49c279561e433aa3ee19797cfe9ed5622fd5c1f79618e9e1b5564
   default_architecture_order:
     - gpt
     - statehead
@@ -135,3 +137,40 @@ execution:
     spend_per_hour_usd: 0
     observed_balance_delta_usd: 0
     balance_usd: 206.0076425183
+vast_execution:
+  provider: vastai
+  status: approved_launch_pending
+  paid_run_approved: true
+  approved_utc: 2026-07-23
+  run_arches: statehead
+  gpt_training_skipped: true
+  gpt_skip_reason: known_control_result
+  offer_id: 40228016
+  machine_id: 68392
+  geolocation: Japan_JP
+  verification: unverified
+  reliability_at_approval: 0.9702319
+  hardware: 8x_NVIDIA_H100_80GB_HBM3_single_node
+  nvlink_bandwidth_gbps: 478.1160888671875
+  cuda_max_good: 13.2
+  driver_version: 595.71.05
+  connection_mode: ssh_proxy
+  container_image_request: vastai/pytorch:@vastai-automatic-tag
+  local_disk_gb: 100
+  maximum_creation_to_destruction_minutes: 120
+  maximum_total_infrastructure_charge_usd: 35.00
+  pricing_basis:
+    gpu_hour_usd: 16.00
+    disk_hour_usd: 0.027777777777777776
+    total_hour_usd: 16.02777777777778
+    two_hour_gpu_and_disk_usd: 32.05555555555556
+    download_usd_per_gb: 0.0026041666666666665
+    upload_usd_per_gb: 0.00390625
+    pricing_checked_utc: 2026-07-23
+  launch_command_environment:
+    RUN_ARCHES: statehead
+    NPROC_PER_NODE: 8
+    DOWNLOAD_WORKERS: 16
+    NANOCHAT_BASE_DIR: /workspace/nanochat-controlled
+  terminate_guard: required
+  delete_after_artifact_retrieval: true
