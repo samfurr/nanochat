@@ -1,5 +1,5 @@
 experiment_id: gpt-d12-controlled-v1
-status: awaiting_full_dataset_run_approval
+status: approved_waiting_for_exact_8xh100_capacity
 model_code_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
 architecture: gpt
 comparison_run: statehead-nanochat-d12-controlled-v1
@@ -42,3 +42,5 @@ checkpoint_selection: predetermined_final_step
 execution_script: runs/statehead_d12_controlled.sh
 execution_script_sha256: b3a0056b4d9ac0c4f534792f684a9a5cd6c2ebe5cf14dda77a2bf0ff675be540
 execution_arch_selector: gpt
+paid_run_approved: true
+launch_status: no_pod_created_capacity_unavailable

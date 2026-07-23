@@ -1,5 +1,5 @@
 experiment_id: statehead-nanochat-d12-controlled-v1
-status: awaiting_full_dataset_run_approval
+status: approved_waiting_for_exact_8xh100_capacity
 model_code_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
 architecture: statehead
 comparison_run: gpt-d12-controlled-v1
@@ -89,4 +89,26 @@ execution:
     size_gb: 100
     data_center: select_at_launch_for_8x_h100_availability
     delete_after_artifact_retrieval: true
-  paid_run_approved: false
+  paid_run_approved: true
+  launch_status: no_pod_created_capacity_unavailable
+  last_launch_attempt_utc: 2026-07-23
+  last_launch_attempts:
+    - data_center: CA-MTL-1
+      outcome: network_volume_unsupported
+      volume_created: false
+      pod_created: false
+    - data_center: US-NE-1
+      outcome: exact_8xh100_instance_unavailable
+      volume_id: psiorukdgq
+      volume_deleted: true
+      pod_created: false
+    - data_center: AP-JP-1
+      outcome: exact_8xh100_instance_unavailable
+      volume_id: nc29r10zf4
+      volume_deleted: true
+      pod_created: false
+  resources_after_attempt:
+    pods: 0
+    network_volumes: 0
+    spend_per_hour_usd: 0
+    observed_balance_delta_usd: 0

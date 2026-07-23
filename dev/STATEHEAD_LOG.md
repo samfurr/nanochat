@@ -553,9 +553,87 @@ NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
 git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git status --short
 ```
 
-The remaining same-day continuation entries are recorded newest-first: controlled
-paired-run preparation, eight-H100 DDP preflight, then the earlier batch-32
-capacity probe.
+The remaining same-day continuation entries are recorded newest-first: paid-run
+capacity attempt, controlled paired-run preparation, eight-H100 DDP preflight,
+then the earlier batch-32 capacity probe.
+
+## 2026-07-22 — approved paired run blocked by exact capacity
+
+The `$24.00` paired GPT/StateHead d12 run was explicitly approved. No training
+pod could be allocated, so the dataset-backed run did not start and produced no
+scientific result.
+
+The pre-launch state was clean:
+
+```text
+checkout head: 1533bde849ae70fa6e1c89120cebb5f4f13189f4
+launcher SHA-256: b3a0056b4d9ac0c4f534792f684a9a5cd6c2ebe5cf14dda77a2bf0ff675be540
+starting balance: $206.882227635
+starting spend rate: $0/hour
+starting pods: 0
+starting network volumes: 0
+```
+
+`CA-MTL-1` reported low H100 inventory but rejected network-volume creation
+because that data center does not support network volumes; no resource was
+created. A 100 GB volume was then created in `US-NE-1`, but RunPod reported no
+remaining instance matching the exact Secure Cloud eight-H100 request. That
+unused volume (`psiorukdgq`) was deleted immediately. One final exact-hardware
+retry used `AP-JP-1`; its temporary volume (`nc29r10zf4`) was also deleted
+immediately after the same capacity response.
+
+No GPU pod was created in any data center. The final RunPod checks reported zero
+pods, zero network volumes, `$0/hour`, and the unchanged balance
+`$206.882227635`. No substitute GPU, cloud type, world size, storage design, or
+training recipe was used. The approved run remains waiting for exact eight-H100
+capacity; no parity or quality claim can be made.
+
+Post-attempt local verification passed: both manifests agree on approved/capacity
+wait status, the launcher hash remains unchanged, its dry run still succeeds,
+the focused StateHead suite reported `42 passed in 2.30s`, and the full suite
+excluding the known macOS memory-limit test reported `85 passed, 14 skipped,
+1 deselected in 4.72s`. Compileall, diff checks, and the pinned model/training
+source assertion also passed.
+
+### Capacity-attempt command ledger
+
+```bash
+wc -l /Users/haybales/.agents/skills/runpod/SKILL.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod/SKILL.md
+wc -l /Users/haybales/.agents/skills/runpodctl/SKILL.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpodctl/SKILL.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/SKILL.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/SKILL.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/development-loop.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/development-loop.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/pod-workflows.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/pod-workflows.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/storage.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/storage.md
+wc -l /Users/haybales/.agents/skills/runpod-usage/reference/on-pod-setup.md && sed -n '1,520p' /Users/haybales/.agents/skills/runpod-usage/reference/on-pod-setup.md
+sed -n '1,140p' /Users/haybales/.agents/skills/runpodctl/SKILL.md && sed -n '141,300p' /Users/haybales/.agents/skills/runpodctl/SKILL.md
+sed -n '1,120p' /Users/haybales/.agents/skills/runpod-usage/SKILL.md && sed -n '1,140p' /Users/haybales/.agents/skills/runpod-usage/reference/development-loop.md
+sed -n '1,180p' /Users/haybales/.agents/skills/runpod-usage/reference/pod-workflows.md
+sed -n '1,180p' /Users/haybales/.agents/skills/runpod-usage/reference/storage.md && sed -n '1,140p' /Users/haybales/.agents/skills/runpod-usage/reference/on-pod-setup.md
+date -u -v+60M '+%Y-%m-%dT%H:%M:%SZ' && git rev-parse HEAD && git status --short && shasum -a 256 runs/statehead_d12_controlled.sh && sed -n '1,180p' dev/experiments/statehead-nanochat-d12-controlled-v1.yaml
+runpodctl version && runpodctl network-volume create --help && runpodctl pod create --help
+runpodctl user
+runpodctl pod list --all
+runpodctl network-volume list
+runpodctl datacenter list | jq '[.[] | {id, h100: [.gpuAvailability[]? | select(.gpuId == "NVIDIA H100 80GB HBM3")] } | select((.h100 | length) > 0)]'
+runpodctl network-volume create --name statehead-d12-controlled-v1 --size 100 --data-center-id CA-MTL-1
+runpodctl network-volume create --name statehead-d12-controlled-v1 --size 100 --data-center-id US-NE-1
+date -u -v+60M '+%Y-%m-%dT%H:%M:%SZ'
+runpodctl pod create --name statehead-d12-paired-v1 --image runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404 --gpu-id "NVIDIA H100 80GB HBM3" --gpu-count 8 --cloud-type SECURE --data-center-ids US-NE-1 --network-volume-id psiorukdgq --volume-mount-path /workspace --container-disk-in-gb 30 --ports "22/tcp" --ssh --terminate-after 2026-07-23T03:19:45Z
+runpodctl network-volume delete psiorukdgq
+runpodctl network-volume list
+runpodctl datacenter list | jq '[.[] | select(.id == "AP-JP-1" or .id == "EUR-IS-3" or .id == "US-NE-1") | {id, h100: [.gpuAvailability[]? | select(.gpuId == "NVIDIA H100 80GB HBM3")]}]'
+runpodctl network-volume create --name statehead-d12-controlled-v1 --size 100 --data-center-id AP-JP-1
+date -u -v+60M '+%Y-%m-%dT%H:%M:%SZ'
+runpodctl pod create --name statehead-d12-paired-v1 --image runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404 --gpu-id "NVIDIA H100 80GB HBM3" --gpu-count 8 --cloud-type SECURE --data-center-ids AP-JP-1 --network-volume-id nc29r10zf4 --volume-mount-path /workspace --container-disk-in-gb 30 --ports "22/tcp" --ssh --terminate-after 2026-07-23T03:20:46Z
+runpodctl network-volume delete nc29r10zf4
+runpodctl pod list --all
+runpodctl network-volume list
+runpodctl user
+.venv/bin/python -c '<assert approved capacity-wait manifests consistent>' && DRY_RUN=1 bash runs/statehead_d12_controlled.sh > /private/tmp/statehead-controlled-dry-run.txt
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest tests/test_statehead.py -q
+NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
+git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git diff --quiet 2944ed65dfb26809073e7b3446ff6255513c83d4 -- nanochat/gpt.py nanochat/statehead.py nanochat/optim.py nanochat/dataloader.py nanochat/checkpoint_manager.py scripts/base_train.py scripts/base_eval.py && git status --short && git diff --stat
+```
 
 ## 2026-07-22 — controlled paired-run launcher preparation
 
