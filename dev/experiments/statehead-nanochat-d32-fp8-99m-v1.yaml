@@ -1,0 +1,88 @@
+experiment_id: statehead-nanochat-d32-fp8-99m-v1
+status: approved_not_launched
+purpose: statehead_only_99_minute_time_to_gpt2_attempt
+source_commit: f68feae68a6be965c8f76c40026cb134aba2c216
+runner: runs/statehead_d32_fp8_99m.sh
+architecture: statehead
+comparison_reference:
+  model: nanochat_gpt_d24_run_6
+  leaderboard_file: dev/LEADERBOARD.md
+  target_core: 0.256525
+  reported_training_minutes: 99
+  depth: 24
+  scaling_parameters: 729810624
+  fp8: tensorwise
+model:
+  depth: 32
+  width: 2048
+  state_heads: 16
+  head_dim: 128
+  total_parameters: 805634138
+  scaling_parameters: 738197504
+  estimated_flops_per_token: 4429774992
+  mlp: none
+  attention: none
+  sequence_length: 2048
+  scan_backend: cuda
+  scan_chunk_size: 32
+  scan_accumulation: float32
+precision:
+  master_weights: float32
+  activations: bfloat16
+  eligible_projection_gemms: tensorwise_fp8
+  recurrence: float32
+training:
+  seed: 1337
+  world_size: 8
+  device_batch_size: 8
+  gradient_accumulation_steps: 8
+  total_batch_tokens: 1048576
+  target_measured_training_seconds: 5940
+  iteration_rule: calibrated_from_250_step_dataset_gate
+  warmup_steps: 40
+  warmdown_ratio: 0.65
+  final_lr_fraction: 0.05
+  validation_every_steps: 500
+  validation_tokens: 41943040
+  checkpoint_every_steps: 1000
+  checkpoint_selection: predetermined_calibrated_final_step
+data:
+  dataset: karpathy/climbmix-400b-shuffle
+  train_shards: shard_00000.parquet_through_shard_00169.parquet
+  validation_shard: shard_06542.parquet
+  tokenizer_training_chars: 2000000000
+  tokenizer_vocab_size: 32768
+paid_gate:
+  production_shape_ddp_fp8_finite_gradient_steps: 4
+  dataset_calibration_steps: 250
+  dataset_validation_tokens: 4194304
+  continue_requirements:
+    - exact_8xh100_sxm_single_node
+    - cuda_extension_compiles
+    - all_parameter_gradients_finite_in_ddp_probe
+    - dataset_training_loss_finite_and_decreasing
+    - dataset_validation_bpb_finite_and_decreasing
+    - calibrated_steps_between_1000_and_20000
+infrastructure:
+  provider: vastai
+  offer_id: 40228016
+  hardware: 8x_NVIDIA_H100_80GB_HBM3_single_node
+  geolocation: Japan_JP
+  verification: unverified
+  reliability_at_approval: 0.9702319
+  nvlink_bandwidth_gbps: 478.1160888671875
+  container_image: vastai/pytorch:@vastai-automatic-tag
+  local_disk_gb: 150
+  total_hour_usd: 16.041666666666668
+  maximum_creation_to_destruction_minutes: 180
+  maximum_infrastructure_charge_usd: 50.00
+  termination_guard: required
+  delete_after_artifact_retrieval: true
+approval:
+  user_approved: true
+  approved_utc: 2026-07-23
+  approved_ceiling_usd: 50.00
+claims:
+  learning_parity: not_yet_demonstrated
+  gpt2_core_parity: not_yet_demonstrated
+  leaderboard_parity: not_yet_demonstrated
