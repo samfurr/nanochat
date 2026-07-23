@@ -243,6 +243,7 @@ def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch():
             block.state_bank.out_proj.weight.normal_(std=0.05)
             block.state_bank.initial_state.normal_(std=0.05)
     native_model = StateHead(native_config).cuda()
+    native_model.init_weights()
     native_model.load_state_dict(reference_model.state_dict())
 
     inputs = torch.randint(0, reference_config.vocab_size, (2, 65), device="cuda")
