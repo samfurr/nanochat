@@ -1,0 +1,96 @@
+{
+  "probe": "statehead_cuda_ddp_feasibility",
+  "scientific_result": false,
+  "repo_commit": "2944ed65dfb26809073e7b3446ff6255513c83d4",
+  "torch_version": "2.9.1+cu128",
+  "cuda_version": "12.8",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "world_size": 1,
+  "compiled": true,
+  "seed": 1337,
+  "precision": "torch.bfloat16",
+  "config": {
+    "device_batch_size": 32,
+    "steps": 2,
+    "seed": 1337,
+    "sequence_length": 2048,
+    "layers": 12,
+    "model_width": 768,
+    "heads": 6,
+    "vocab_size": 32768,
+    "scan_chunk_size": 64,
+    "eager": false,
+    "output": "/workspace/statehead-batch32-results/statehead-d12-b32-w1.json"
+  },
+  "parameter_counts": {
+    "wte": 25165824,
+    "lm_head": 25165824,
+    "statehead_matrices": 35389440,
+    "statehead_vectors": 46080,
+    "transformer_matrices": 35389440,
+    "scalars": 50,
+    "total": 85767218
+  },
+  "scaling_params": 60555264,
+  "flops_per_token": 363414672,
+  "state_bytes_per_rank": 589824,
+  "optimizer_groups": [
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 25165824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 25165824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 24,
+      "parameters": 46080
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 12
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 12
+    },
+    {
+      "kind": "adamw",
+      "tensors": 3,
+      "parameters": 26
+    },
+    {
+      "kind": "muon",
+      "tensors": 12,
+      "parameters": 7077888
+    },
+    {
+      "kind": "muon",
+      "tensors": 12,
+      "parameters": 28311552
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "loss_rank0": 10.397625923156738,
+      "seconds_max_rank": 62.84214859455824,
+      "global_tokens_per_second": 1042.8669526056758
+    },
+    {
+      "step": 1,
+      "loss_rank0": 7.433448791503906,
+      "seconds_max_rank": 0.12126892618834972,
+      "global_tokens_per_second": 540418.7375932749
+    }
+  ],
+  "peak_allocated_bytes_max_rank": 43420313600,
+  "peak_reserved_bytes_max_rank": 47355789312,
+  "parameter_checksum_spread": 0.0
+}

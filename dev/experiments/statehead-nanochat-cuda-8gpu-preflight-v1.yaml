@@ -1,0 +1,51 @@
+experiment_id: statehead-nanochat-cuda-8gpu-preflight-v1
+status: awaiting_paid_run_approval
+purpose: distributed_optimizer_and_nccl_feasibility_only
+scientific_result: false
+repo_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
+prerequisite_artifacts:
+  - dev/results/statehead-nanochat-cuda-preflight-v1.json
+  - dev/results/statehead-nanochat-cuda-batch32-preflight-v1.json
+seed: 1337
+precision: bfloat16
+fp8: false
+compile: true
+architecture: statehead
+layers: 12
+model_width: 768
+state_heads: 6
+head_width: 128
+mlp: none
+attention: none
+scan_backend: pytorch_parallel
+scan_chunk_size: 64
+scan_accumulation: float32
+sequence_length: 2048
+vocab_size: 32768
+synthetic_tokens: true
+world_size: 8
+device_batch_size: 32
+global_batch_tokens: 524288
+training_steps: 2
+optimizer: nanochat_muon_adamw
+headwise_muon: false
+hardware: 8x_NVIDIA_H100_80GB_HBM3_single_node
+cloud_type: secure
+container_image: runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404
+maximum_runtime_minutes: 15
+maximum_gpu_charge_usd: 5.98
+terminate_guard: required
+capture:
+  - compile_and_step_time_max_rank
+  - global_tokens_per_second
+  - peak_allocated_vram_max_rank
+  - peak_reserved_vram_max_rank
+  - finite_loss_and_gradients_all_ranks
+  - optimizer_parameter_groups
+  - cross_rank_parameter_checksum_spread
+success_criteria:
+  - process_exit_zero
+  - all_eight_ranks_complete_two_optimizer_steps
+  - finite_loss_and_gradients_all_ranks
+  - cross_rank_parameter_checksum_spread_zero
+checkpoint_selection: none

@@ -1,5 +1,5 @@
 experiment_id: statehead-nanochat-cuda-batch32-preflight-v1
-status: awaiting_paid_run_approval
+status: complete
 purpose: device_batch_capacity_only
 scientific_result: false
 repo_commit: 2944ed65dfb26809073e7b3446ff6255513c83d4
@@ -48,3 +48,20 @@ success_criteria:
   - batch_32_two_optimizer_steps_complete_or_oom_is_recorded
   - peak_vram_recorded_for_largest_successful_batch
 checkpoint_selection: none
+result:
+  artifact: dev/results/statehead-nanochat-cuda-batch32-preflight-v1.json
+  batch_32_completed: true
+  fallback_batch_16_needed: false
+  process_exit_zero: true
+  finite_loss_and_gradients: true
+  optimizer_steps_completed: 2
+  first_step_including_compile_seconds: 62.84214859455824
+  steady_step_seconds: 0.12126892618834972
+  steady_global_tokens_per_second: 540418.7375932749
+  peak_allocated_bytes: 43420313600
+  peak_reserved_bytes: 47355789312
+  parameter_checksum_spread: 0.0
+  json_sha256: 3581691c4be67c2fe7e5ff3dfdb36c98e975ac4f51c66b822d229ef5ad0d2554
+  raw_log_sha256: 86fe7b6f12f74ace7effd1143842160e7724f7ef9d753c1fee58824dbbda40ee
+  observed_balance_delta_usd: 0.0590168361
+  pod_deleted: true
