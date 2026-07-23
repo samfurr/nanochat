@@ -552,3 +552,13 @@ NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest tests/test_statehead.py -q
 NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
 git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git status --short
 ```
+
+### Next gated probe
+
+The controlled 8-GPU global batch is exactly `32 × 2,048 × 8 = 524,288`
+tokens. The successful device-batch-1 probe does not establish that device batch
+32 fits. `dev/experiments/statehead-nanochat-cuda-batch32-preflight-v1.yaml`
+therefore defines a separate one-H100, two-step capacity probe with a 15-minute
+hard termination guard. If batch 32 OOMs, the same bounded pod may retry batch 16
+and record the largest successful batch. No GPU is launched without a new cost
+approval.
