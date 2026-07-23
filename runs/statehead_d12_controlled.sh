@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-readonly MODEL_CODE_COMMIT="2944ed65dfb26809073e7b3446ff6255513c83d4"
+readonly MODEL_CODE_COMMIT="b952753243ea14ac391d617244f2fbd52ba0a487"
 readonly WORLD_SIZE=8
 readonly DEVICE_BATCH_SIZE=32
 readonly SEQUENCE_LENGTH=2048
@@ -141,6 +141,11 @@ build_commands() {
         "--model-tag=$tag"
         "--run=$wandb_run"
     )
+    if [[ "$arch" == "statehead" ]]; then
+        # Keep the original Phase 3 scientific comparison on the explicit
+        # PyTorch/BF16 reference path. Native CUDA/FP8 has its own Phase 5 gate.
+        TRAIN_COMMAND+=(--statehead-scan-backend=pytorch)
+    fi
     EVAL_COMMAND=(
         torchrun --standalone "--nproc_per_node=$WORLD_SIZE" -m scripts.base_eval --
         --device-type=cuda

@@ -1,8 +1,8 @@
 experiment_id: statehead-nanochat-fused-cuda-preflight-v1
-status: implementation_ready_local_cuda_unverified
+status: committed_local_cuda_unverified
 purpose: native_cuda_correctness_and_full_step_speed_gate
 scientific_result: false
-repo_commit: FILL_AFTER_IMPLEMENTATION_COMMIT
+repo_commit: b952753243ea14ac391d617244f2fbd52ba0a487
 seed: 1337
 hardware: 1x_NVIDIA_H100_80GB_HBM3
 container_image: runpod/pytorch:1.0.3-cu1281-torch291-ubuntu2404

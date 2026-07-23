@@ -651,6 +651,23 @@ provisioned H100 checkout, the next correctness command is:
 NANOCHAT_DTYPE=float32 python -m pytest tests/test_statehead.py -q
 ```
 
+Implementation commit:
+
+```text
+b952753243ea14ac391d617244f2fbd52ba0a487
+```
+
+The existing Phase 3 paired runner is pinned to that model-code commit but
+explicitly selects `--statehead-scan-backend=pytorch`, preserving the approved
+BF16 scientific comparison. The separate Phase 5 synthetic full-step gate uses
+these commands after CUDA correctness passes:
+
+```bash
+NANOCHAT_REPO_COMMIT=b952753243ea14ac391d617244f2fbd52ba0a487 NPROC_PER_NODE=1 DEVICE_BATCH_SIZE=32 PREFLIGHT_STEPS=5 SCAN_BACKEND=pytorch FP8=0 PREFLIGHT_TAG=statehead-d12-pytorch-bf16 RESULTS_DIR=/workspace/statehead-fused-results bash runs/statehead_cuda_preflight.sh
+NANOCHAT_REPO_COMMIT=b952753243ea14ac391d617244f2fbd52ba0a487 NPROC_PER_NODE=1 DEVICE_BATCH_SIZE=32 PREFLIGHT_STEPS=5 SCAN_BACKEND=cuda FP8=0 PREFLIGHT_TAG=statehead-d12-cuda-bf16 RESULTS_DIR=/workspace/statehead-fused-results bash runs/statehead_cuda_preflight.sh
+NANOCHAT_REPO_COMMIT=b952753243ea14ac391d617244f2fbd52ba0a487 NPROC_PER_NODE=1 DEVICE_BATCH_SIZE=32 PREFLIGHT_STEPS=5 SCAN_BACKEND=cuda FP8=1 PREFLIGHT_TAG=statehead-d12-cuda-fp8 RESULTS_DIR=/workspace/statehead-fused-results bash runs/statehead_cuda_preflight.sh
+```
+
 The remaining same-day continuation entries are recorded newest-first: paid-run
 capacity attempt, controlled paired-run preparation, eight-H100 DDP preflight,
 then the earlier batch-32 capacity probe.
