@@ -1,5 +1,5 @@
 experiment_id: statehead-nanochat-d12-controlled-v1
-status: approved_vast_statehead_only_launch_pending
+status: running_vast_statehead_only
 model_code_commit: b952753243ea14ac391d617244f2fbd52ba0a487
 architecture: statehead
 comparison_run: gpt-d12-controlled-v1
@@ -139,7 +139,7 @@ execution:
     balance_usd: 206.0076425183
 vast_execution:
   provider: vastai
-  status: approved_launch_pending
+  status: running
   paid_run_approved: true
   approved_utc: 2026-07-23
   run_arches: statehead
@@ -157,13 +157,18 @@ vast_execution:
   connection_mode: ssh_proxy
   container_image_request: vastai/pytorch:@vastai-automatic-tag
   local_disk_gb: 100
-  maximum_creation_to_destruction_minutes: 120
-  maximum_total_infrastructure_charge_usd: 35.00
+  instance_id: 45630532
+  launch_checkout_head: 07d3766f98ea1563b2034477f48e8de5fb12a746
+  created_utc: 2026-07-23T17:11:17Z
+  terminate_deadline_utc: 2026-07-23T20:11:17Z
+  maximum_creation_to_destruction_minutes: 180
+  maximum_total_infrastructure_charge_usd: 50.00
   pricing_basis:
     gpu_hour_usd: 16.00
     disk_hour_usd: 0.027777777777777776
     total_hour_usd: 16.02777777777778
     two_hour_gpu_and_disk_usd: 32.05555555555556
+    three_hour_gpu_and_disk_usd: 48.08333333333334
     download_usd_per_gb: 0.0026041666666666665
     upload_usd_per_gb: 0.00390625
     pricing_checked_utc: 2026-07-23
