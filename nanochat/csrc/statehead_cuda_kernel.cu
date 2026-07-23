@@ -21,6 +21,40 @@ __device__ __forceinline__ float sigmoidf(float value) {
 }
 
 template <typename scalar_t>
+__global__ void statehead_activate_gates_kernel(
+    const scalar_t* __restrict__ gates,
+    const scalar_t* __restrict__ gate_bias,
+    scalar_t* __restrict__ activated_gates,
+    int64_t total_gate_states,
+    int64_t gate_stride) {
+  const int64_t item =
+      static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (item >= total_gate_states) {
+    return;
+  }
+
+  const int64_t token = item / gate_stride;
+  const int64_t state = item - token * gate_stride;
+  const int64_t gate_base = token * 4 * gate_stride + state;
+  activated_gates[gate_base] = static_cast<scalar_t>(
+      sigmoidf(
+          static_cast<float>(gates[gate_base]) +
+          static_cast<float>(gate_bias[state])));
+  activated_gates[gate_base + gate_stride] = static_cast<scalar_t>(
+      sigmoidf(
+          static_cast<float>(gates[gate_base + gate_stride]) +
+          static_cast<float>(gate_bias[gate_stride + state])));
+  activated_gates[gate_base + 2 * gate_stride] = static_cast<scalar_t>(
+      tanhf(
+          static_cast<float>(gates[gate_base + 2 * gate_stride]) +
+          static_cast<float>(gate_bias[2 * gate_stride + state])));
+  activated_gates[gate_base + 3 * gate_stride] = static_cast<scalar_t>(
+      sigmoidf(
+          static_cast<float>(gates[gate_base + 3 * gate_stride]) +
+          static_cast<float>(gate_bias[3 * gate_stride + state])));
+}
+
+template <typename scalar_t>
 __device__ __forceinline__ float load_gate(
     const scalar_t* gates,
     int64_t batch,
@@ -40,8 +74,6 @@ __device__ __forceinline__ float load_gate(
 template <typename scalar_t>
 __global__ void statehead_chunk_summary_kernel(
     const scalar_t* __restrict__ gates,
-    const scalar_t* __restrict__ gate_bias,
-    scalar_t* __restrict__ activated_gates,
     float* __restrict__ chunk_a,
     float* __restrict__ chunk_u,
     int64_t total_states,
@@ -65,33 +97,16 @@ __global__ void statehead_chunk_summary_kernel(
   const int64_t start = chunk * chunk_size;
   const int64_t stop =
       start + chunk_size < sequence_len ? start + chunk_size : sequence_len;
-  const int64_t gate_stride = n_head * head_dim;
-  const int64_t gate_state = head * head_dim + dim;
 
   float transition_a = 1.0f;
   float transition_u = 0.0f;
   for (int64_t time = start; time < stop; ++time) {
-    const int64_t gate_base =
-        ((batch * sequence_len + time) * 4 * gate_stride) + gate_state;
-    const scalar_t activated_a = static_cast<scalar_t>(sigmoidf(
-        static_cast<float>(gates[gate_base]) +
-        static_cast<float>(gate_bias[gate_state])));
-    const scalar_t activated_b = static_cast<scalar_t>(sigmoidf(
-        static_cast<float>(gates[gate_base + gate_stride]) +
-        static_cast<float>(gate_bias[gate_stride + gate_state])));
-    const scalar_t activated_c = static_cast<scalar_t>(tanhf(
-        static_cast<float>(gates[gate_base + 2 * gate_stride]) +
-        static_cast<float>(gate_bias[2 * gate_stride + gate_state])));
-    const scalar_t activated_o = static_cast<scalar_t>(sigmoidf(
-        static_cast<float>(gates[gate_base + 3 * gate_stride]) +
-        static_cast<float>(gate_bias[3 * gate_stride + gate_state])));
-    activated_gates[gate_base] = activated_a;
-    activated_gates[gate_base + gate_stride] = activated_b;
-    activated_gates[gate_base + 2 * gate_stride] = activated_c;
-    activated_gates[gate_base + 3 * gate_stride] = activated_o;
-    const float a = static_cast<float>(activated_a);
-    const float b = static_cast<float>(activated_b);
-    const float c = static_cast<float>(activated_c);
+    const float a = load_gate(
+        gates, batch, time, 0, head, dim, sequence_len, n_head, head_dim);
+    const float b = load_gate(
+        gates, batch, time, 1, head, dim, sequence_len, n_head, head_dim);
+    const float c = load_gate(
+        gates, batch, time, 2, head, dim, sequence_len, n_head, head_dim);
     transition_u = a * transition_u + b * c;
     transition_a = a * transition_a;
   }
@@ -402,6 +417,10 @@ std::vector<torch::Tensor> statehead_forward_cuda(
       static_cast<int>((summary_items + kForwardThreads - 1) / kForwardThreads);
   const int state_blocks =
       static_cast<int>((total_states + kForwardThreads - 1) / kForwardThreads);
+  const int64_t total_gate_states = batch * sequence_len * n_head * head_dim;
+  const int gate_blocks = static_cast<int>(
+      (total_gate_states + kForwardThreads - 1) / kForwardThreads);
+  const int64_t gate_stride = n_head * head_dim;
   const cudaStream_t stream = c10::cuda::getCurrentCUDAStream().stream();
 
   AT_DISPATCH_FLOATING_TYPES_AND2(
@@ -410,10 +429,17 @@ std::vector<torch::Tensor> statehead_forward_cuda(
       gates.scalar_type(),
       "statehead_forward_cuda",
       [&] {
-        statehead_chunk_summary_kernel<scalar_t>
-            <<<summary_blocks, kForwardThreads, 0, stream>>>(
+        statehead_activate_gates_kernel<scalar_t>
+            <<<gate_blocks, kForwardThreads, 0, stream>>>(
                 gates.data_ptr<scalar_t>(),
                 gate_bias.data_ptr<scalar_t>(),
+                activated_gates.data_ptr<scalar_t>(),
+                total_gate_states,
+                gate_stride);
+        C10_CUDA_KERNEL_LAUNCH_CHECK();
+
+        statehead_chunk_summary_kernel<scalar_t>
+            <<<summary_blocks, kForwardThreads, 0, stream>>>(
                 activated_gates.data_ptr<scalar_t>(),
                 chunk_a.data_ptr<float>(),
                 chunk_u.data_ptr<float>(),
