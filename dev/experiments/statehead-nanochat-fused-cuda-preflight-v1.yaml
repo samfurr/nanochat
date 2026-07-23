@@ -1,6 +1,6 @@
 experiment_id: statehead-nanochat-fused-cuda-preflight-v1
-status: committed_local_cuda_unverified
-purpose: native_cuda_correctness_and_full_step_speed_gate
+status: prepared_cuda_unverified
+purpose: native_cuda_correctness_fp8_stability_and_full_step_speed_gate
 scientific_result: false
 repo_commit: b952753243ea14ac391d617244f2fbd52ba0a487
 seed: 1337
@@ -17,11 +17,72 @@ sequence_length: 2048
 device_batch_size: 32
 scan_chunk_size: 64
 scan_accumulation: float32
-reference:
-  precision: bfloat16
-  fp8: false
-  scan_backend: pytorch
-candidates:
+comparison_modes:
+  - architecture: statehead
+    precision: bfloat16
+    fp8: false
+    scan_backend: pytorch
+    role: compiled_pytorch_reference
+  - architecture: statehead
+    precision: bfloat16
+    fp8: false
+    scan_backend: cuda
+    role: native_cuda_candidate
+  - architecture: statehead
+    precision: bfloat16
+    fp8: tensorwise_dynamic
+    fp8_forward_operands: e4m3fn
+    fp8_backward_grad_output: e5m2
+    scan_backend: cuda
+    role: native_cuda_winner_precision_candidate
+  - architecture: gpt
+    precision: bfloat16
+    fp8: false
+    attention_backend: nanochat_flash_attention
+    role: compiled_gpt_bf16_control
+  - architecture: gpt
+    precision: bfloat16
+    fp8: tensorwise_dynamic
+    fp8_forward_operands: e4m3fn
+    fp8_backward_grad_output: e5m2
+    attention_backend: nanochat_flash_attention
+    role: compiled_gpt_winner_precision_reference
+fp8_recipe:
+  master_weights: float32
+  activations: bfloat16
+  scaling: tensorwise_dynamic
+  eligible_linears: dimensions_divisible_by_16_and_min_dimension_at_least_128
+  recurrence_accumulation: float32
+correctness_commands:
+  - NANOCHAT_DTYPE=float32 NANOCHAT_STATEHEAD_CUDA_VERBOSE=1 python -m pytest tests/test_statehead.py -q
+  - NANOCHAT_DTYPE=bfloat16 python -m pytest tests/test_statehead.py -q
+speed_commands:
+  - ARCH=statehead SCAN_BACKEND=pytorch FP8=0 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=statehead-pytorch-bf16-speed bash runs/statehead_cuda_preflight.sh
+  - ARCH=statehead SCAN_BACKEND=cuda FP8=0 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=statehead-cuda-bf16-speed bash runs/statehead_cuda_preflight.sh
+  - ARCH=statehead SCAN_BACKEND=cuda FP8=1 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=statehead-cuda-fp8-speed bash runs/statehead_cuda_preflight.sh
+  - ARCH=gpt SCAN_BACKEND=pytorch FP8=0 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=gpt-bf16-speed bash runs/statehead_cuda_preflight.sh
+  - ARCH=gpt SCAN_BACKEND=pytorch FP8=1 PREFLIGHT_STEPS=20 WARMUP_STEPS=5 VERIFY_GRADIENTS=0 PREFLIGHT_TAG=gpt-fp8-speed bash runs/statehead_cuda_preflight.sh
+stability_commands:
+  - ARCH=statehead SCAN_BACKEND=cuda FP8=1 PREFLIGHT_STEPS=50 WARMUP_STEPS=5 VERIFY_GRADIENTS=1 PREFLIGHT_TAG=statehead-cuda-fp8-stability bash runs/statehead_cuda_preflight.sh
+  - ARCH=gpt SCAN_BACKEND=pytorch FP8=1 PREFLIGHT_STEPS=50 WARMUP_STEPS=5 VERIFY_GRADIENTS=1 PREFLIGHT_TAG=gpt-fp8-stability bash runs/statehead_cuda_preflight.sh
+success_gates:
+  cuda_compilation:
+    requirement: native_extension_builds_and_loads_with_nvcc
+  numerical_parity:
+    requirement: cuda_forward_tests_pass_in_float32_and_bfloat16
+  gradient_parity:
+    requirement: kernel_and_compiled_full_model_gradient_tests_pass
+  fp8_stability:
+    requirement: 50_steps_with_finite_loss_and_all_parameter_gradients
+  speed:
+    metric: median_full_optimizer_step_tokens_per_second
+    warmup_steps_excluded: 5
+    comparisons:
+      - statehead_cuda_bf16_vs_statehead_compiled_pytorch_bf16
+      - statehead_cuda_fp8_vs_statehead_compiled_pytorch_bf16
+      - statehead_cuda_fp8_vs_gpt_compiled_fp8
+      - statehead_cuda_bf16_vs_gpt_compiled_bf16
+unverified_candidates:
   - precision: bfloat16
     fp8: false
     scan_backend: cuda
@@ -30,11 +91,6 @@ candidates:
     fp8_forward_operands: e4m3fn
     fp8_backward_grad_output: e5m2
     scan_backend: cuda
-correctness_commands:
-  - NANOCHAT_DTYPE=float32 python -m pytest tests/test_statehead.py -q
-  - NANOCHAT_DTYPE=bfloat16 python -m pytest tests/test_statehead.py -q
-benchmark_metric: full_optimizer_step_tokens_per_second
-benchmark_steps: 5
 claims_not_authorized_without_results:
   - cuda_forward_parity
   - cuda_gradient_parity

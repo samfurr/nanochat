@@ -5,9 +5,11 @@ from dataclasses import asdict
 
 import pytest
 import torch
+import torch.nn.functional as F
 
 import nanochat.checkpoint_manager as checkpoint_manager
 from nanochat.checkpoint_manager import build_model, save_checkpoint
+from nanochat.common import COMPUTE_DTYPE
 from nanochat.gpt import GPT, GPTConfig
 from nanochat.statehead import (
     StateHead,
@@ -214,6 +216,85 @@ def test_native_cuda_scan_compiles_fullgraph():
     assert torch.isfinite(loss)
     assert torch.isfinite(gates.grad).all()
     assert torch.isfinite(initial_state.grad).all()
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
+def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch():
+    from nanochat.statehead_cuda import preload_statehead_cuda
+
+    preload_statehead_cuda()
+    torch.manual_seed(7200)
+    reference_config = StateHeadConfig(
+        sequence_len=65,
+        vocab_size=128,
+        n_layer=2,
+        n_head=4,
+        n_embd=32,
+        scan_chunk_size=64,
+        scan_backend="pytorch",
+    )
+    native_config = copy.deepcopy(reference_config)
+    native_config.scan_backend = "cuda"
+    reference_model = StateHead(reference_config).cuda()
+    reference_model.init_weights()
+    with torch.no_grad():
+        reference_model.smear_lambda.fill_(0.4)
+        for block in reference_model.transformer.h:
+            block.state_bank.out_proj.weight.normal_(std=0.05)
+            block.state_bank.initial_state.normal_(std=0.05)
+    native_model = StateHead(native_config).cuda()
+    native_model.load_state_dict(reference_model.state_dict())
+
+    inputs = torch.randint(0, reference_config.vocab_size, (2, 65), device="cuda")
+    targets = torch.roll(inputs, shifts=-1, dims=1)
+
+    def run_compiled(model):
+        def logits_and_loss(idx, target):
+            logits = model(idx)
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)),
+                target.view(-1),
+            )
+            return logits, loss
+
+        compiled = torch.compile(logits_and_loss, dynamic=False, fullgraph=True)
+        logits, loss = compiled(inputs, targets)
+        loss.backward()
+        gradients = {
+            name: parameter.grad.detach().clone()
+            for name, parameter in model.named_parameters()
+        }
+        return logits.detach(), loss.detach(), gradients
+
+    expected_logits, expected_loss, expected_gradients = run_compiled(reference_model)
+    actual_logits, actual_loss, actual_gradients = run_compiled(native_model)
+    if COMPUTE_DTYPE == torch.bfloat16:
+        forward_rtol, forward_atol = 3e-2, 3e-2
+        gradient_rtol, gradient_atol = 6e-2, 6e-3
+    else:
+        forward_rtol, forward_atol = 2e-4, 2e-5
+        gradient_rtol, gradient_atol = 3e-3, 3e-4
+    torch.testing.assert_close(
+        actual_logits,
+        expected_logits,
+        rtol=forward_rtol,
+        atol=forward_atol,
+    )
+    torch.testing.assert_close(
+        actual_loss,
+        expected_loss,
+        rtol=forward_rtol,
+        atol=forward_atol,
+    )
+    assert actual_gradients.keys() == expected_gradients.keys()
+    for name in actual_gradients:
+        torch.testing.assert_close(
+            actual_gradients[name],
+            expected_gradients[name],
+            rtol=gradient_rtol,
+            atol=gradient_atol,
+            msg=lambda message, parameter_name=name: f"{parameter_name}: {message}",
+        )
 
 
 def test_statehead_fp8_filter_matches_large_linear_recipe():

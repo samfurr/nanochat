@@ -1,19 +1,22 @@
-"""Bounded CUDA/DDP feasibility probe for the correctness-first StateHead.
+"""Bounded CUDA/DDP feasibility and full-step comparison probe.
 
 This deliberately uses synthetic token rows. It checks whether the full d12 shape,
-compiler, backward pass, and distributed Muon/AdamW optimizer execute before any
-dataset-backed Phase 3 training is authorized. It is not a learning-quality run.
+compiler, backward pass, and distributed Muon/AdamW optimizer execute for GPT and
+StateHead before any dataset-backed training is authorized. It is not a
+learning-quality run.
 """
 
 import argparse
 import json
 import os
+import statistics
 import time
 
 import torch
 import torch.distributed as dist
 
 from nanochat.common import COMPUTE_DTYPE, compute_cleanup, compute_init, print0
+from nanochat.gpt import GPT, GPTConfig
 from nanochat.statehead import StateHead, StateHeadConfig
 
 
@@ -33,9 +36,16 @@ def parameter_checksum(model):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="StateHead CUDA/DDP feasibility probe")
+    parser = argparse.ArgumentParser(description="CUDA/DDP full-step comparison probe")
+    parser.add_argument("--arch", choices=["gpt", "statehead"], default="statehead")
     parser.add_argument("--device-batch-size", type=int, default=1)
     parser.add_argument("--steps", type=int, default=2)
+    parser.add_argument(
+        "--warmup-steps",
+        type=int,
+        default=1,
+        help="exclude this many initial compile/warmup steps from the steady-state summary",
+    )
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument("--sequence-length", type=int, default=2048)
     parser.add_argument("--layers", type=int, default=12)
@@ -46,6 +56,11 @@ def main():
     parser.add_argument("--scan-backend", choices=["pytorch", "cuda"], default="pytorch")
     parser.add_argument("--fp8", action="store_true")
     parser.add_argument("--eager", action="store_true", help="disable torch.compile")
+    parser.add_argument(
+        "--verify-gradients",
+        action="store_true",
+        help="check every parameter gradient for finiteness (stability mode, not timing mode)",
+    )
     parser.add_argument("--output", type=str, default="")
     args = parser.parse_args()
 
@@ -55,27 +70,44 @@ def main():
         )
     if args.steps < 1 or args.device_batch_size < 1:
         raise ValueError("--steps and --device-batch-size must be positive")
+    if args.warmup_steps < 0 or args.warmup_steps >= args.steps:
+        raise ValueError("--warmup-steps must be non-negative and less than --steps")
+    if args.arch == "gpt" and args.scan_backend != "pytorch":
+        raise ValueError("GPT has no StateHead scan backend; use --scan-backend=pytorch")
 
     ddp, rank, local_rank, world_size, device = compute_init("cuda")
     torch.manual_seed(args.seed)
     torch.cuda.manual_seed(args.seed)
 
-    config = StateHeadConfig(
-        sequence_len=args.sequence_length,
-        vocab_size=args.vocab_size,
-        n_layer=args.layers,
-        n_head=args.heads,
-        n_embd=args.model_width,
-        scan_chunk_size=args.scan_chunk_size,
-        scan_backend=args.scan_backend,
-    )
+    if args.arch == "gpt":
+        config = GPTConfig(
+            sequence_len=args.sequence_length,
+            vocab_size=args.vocab_size,
+            n_layer=args.layers,
+            n_head=args.heads,
+            n_kv_head=args.heads,
+            n_embd=args.model_width,
+            window_pattern="SSSL",
+        )
+        model_cls = GPT
+    else:
+        config = StateHeadConfig(
+            sequence_len=args.sequence_length,
+            vocab_size=args.vocab_size,
+            n_layer=args.layers,
+            n_head=args.heads,
+            n_embd=args.model_width,
+            scan_chunk_size=args.scan_chunk_size,
+            scan_backend=args.scan_backend,
+        )
+        model_cls = StateHead
     with torch.device("meta"):
-        model = StateHead(config)
+        model = model_cls(config)
     model.to_empty(device=device)
     model.init_weights()
     original_model = model
 
-    if args.scan_backend == "cuda":
+    if args.arch == "statehead" and args.scan_backend == "cuda":
         from nanochat.statehead_cuda import preload_statehead_cuda
 
         preload_statehead_cuda()
@@ -83,9 +115,13 @@ def main():
     counts = original_model.num_scaling_params()
     scaling_params = counts["transformer_matrices"] + counts["lm_head"]
     flops_per_token = original_model.estimate_flops()
-    state_bytes_per_rank = original_model.recurrent_state_bytes(
-        batch_size=args.device_batch_size,
-        dtype=torch.bfloat16,
+    state_bytes_per_rank = (
+        original_model.recurrent_state_bytes(
+            batch_size=args.device_batch_size,
+            dtype=torch.bfloat16,
+        )
+        if args.arch == "statehead"
+        else 0
     )
 
     fp8_linear_count = 0
@@ -135,32 +171,34 @@ def main():
     for step in range(args.steps):
         start = time.perf_counter()
         loss = model(inputs, targets)
-        if not bool(torch.isfinite(loss).item()):
-            raise FloatingPointError(f"non-finite loss at step {step}: {loss.item()}")
         loss.backward()
-        local_grad_finite = all(
-            parameter.grad is None or bool(torch.isfinite(parameter.grad).all().item())
-            for parameter in original_model.parameters()
-        )
-        finite_flag = torch.tensor(int(local_grad_finite), device=device)
-        if dist.is_initialized():
-            dist.all_reduce(finite_flag, op=dist.ReduceOp.MIN)
-        if not bool(finite_flag.item()):
-            raise FloatingPointError(f"non-finite gradient at step {step}")
+        if args.verify_gradients:
+            local_grad_finite = all(
+                parameter.grad is None or bool(torch.isfinite(parameter.grad).all().item())
+                for parameter in original_model.parameters()
+            )
+            finite_flag = torch.tensor(int(local_grad_finite), device=device)
+            if dist.is_initialized():
+                dist.all_reduce(finite_flag, op=dist.ReduceOp.MIN)
+            if not bool(finite_flag.item()):
+                raise FloatingPointError(f"non-finite gradient at step {step}")
         optimizer.step()
         model.zero_grad(set_to_none=True)
         torch.cuda.synchronize()
         local_seconds = time.perf_counter() - start
+        loss_value = loss.item()
+        if not torch.isfinite(torch.tensor(loss_value)):
+            raise FloatingPointError(f"non-finite loss at step {step}: {loss_value}")
         max_seconds = distributed_max(local_seconds, device)
         global_tokens = args.device_batch_size * args.sequence_length * world_size
         step_records.append({
             "step": step,
-            "loss_rank0": loss.item() if rank == 0 else None,
+            "loss_rank0": loss_value if rank == 0 else None,
             "seconds_max_rank": max_seconds,
             "global_tokens_per_second": global_tokens / max_seconds,
         })
         print0(
-            f"step={step} loss={loss.item():.6f} max_rank_seconds={max_seconds:.3f} "
+            f"step={step} loss={loss_value:.6f} max_rank_seconds={max_seconds:.3f} "
             f"global_tok_per_sec={global_tokens / max_seconds:,.0f}"
         )
 
@@ -174,9 +212,25 @@ def main():
 
     peak_allocated = distributed_max(torch.cuda.max_memory_allocated(device), device)
     peak_reserved = distributed_max(torch.cuda.max_memory_reserved(device), device)
+    steady_records = step_records[args.warmup_steps:]
+    steady_seconds = [record["seconds_max_rank"] for record in steady_records]
+    steady_throughput = [
+        record["global_tokens_per_second"] for record in steady_records
+    ]
+    steady_summary = {
+        "excluded_warmup_steps": args.warmup_steps,
+        "measured_steps": len(steady_records),
+        "seconds_median_max_rank": statistics.median(steady_seconds),
+        "seconds_mean_max_rank": statistics.mean(steady_seconds),
+        "global_tokens_per_second_median": statistics.median(steady_throughput),
+        "global_tokens_per_second_mean": statistics.mean(steady_throughput),
+        "loss_first_rank0": steady_records[0]["loss_rank0"],
+        "loss_last_rank0": steady_records[-1]["loss_rank0"],
+    }
     result = {
-        "probe": "statehead_cuda_ddp_feasibility",
+        "probe": "cuda_full_step_comparison",
         "scientific_result": False,
+        "architecture": args.arch,
         "repo_commit": os.environ.get("NANOCHAT_REPO_COMMIT", "unknown"),
         "torch_version": torch.__version__,
         "cuda_version": torch.version.cuda,
@@ -187,6 +241,7 @@ def main():
         "precision": str(COMPUTE_DTYPE),
         "fp8": args.fp8,
         "fp8_linear_count": fp8_linear_count,
+        "gradient_finiteness_checked": args.verify_gradients,
         "config": vars(args),
         "parameter_counts": counts,
         "scaling_params": scaling_params,
@@ -194,6 +249,7 @@ def main():
         "state_bytes_per_rank": state_bytes_per_rank,
         "optimizer_groups": group_summary,
         "steps": step_records,
+        "steady_state": steady_summary,
         "peak_allocated_bytes_max_rank": int(peak_allocated),
         "peak_reserved_bytes_max_rank": int(peak_reserved),
         "parameter_checksum_spread": checksum_spread,
