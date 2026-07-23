@@ -553,6 +553,35 @@ NANOCHAT_DTYPE=float32 .venv/bin/python -m pytest -q -k 'not test_memory_limit'
 git diff --check && .venv/bin/python -m compileall -q nanochat scripts tests dev/statehead_cuda_preflight.py && git diff --quiet -- nanochat/gpt.py && git status --short
 ```
 
+## 2026-07-23 — Vast.ai eight-H100 StateHead preflight
+
+The approved Vast.ai offer `40228016` was rented as instance `45629291` for a
+bounded infrastructure/compiler/DDP check. The unverified Japan host supplied
+the exact single-node shape: eight `NVIDIA H100 80GB HBM3` GPUs with all-to-all
+`NV18` topology. The frozen checkout at
+`df6e4161b2def519d7bf9061c15250f31b307abc` installed PyTorch
+`2.9.1+cu128`.
+
+The compiled BF16 PyTorch-reference StateHead d12 probe completed two
+batch-32 optimizer steps on eight ranks. All checked parameter gradients were
+finite, cross-rank checksum spread was `0.0`, the compile-inclusive first step
+took `53.1073154178448` seconds, and the steady step took
+`0.12498901505023241` seconds for `4,194,672.626144717` aggregate tokens per
+second. This is an infrastructure result, not a learning-quality or parity
+claim.
+
+The optional host-local reference parity suite did not run. `pytest` was not
+present in the production-only environment, and the destruction guard fired
+while the locked development group was installing. The instance and its
+remote result files were destroyed before retrieval. The captured JSON stdout
+is preserved at
+`dev/results/statehead-vast-8gpu-preflight-20260723/captured-result.json`; its
+provenance and the complete command ledger are in the adjacent `REPORT.md`.
+
+Vast.ai posted `$1.749`: `$1.734` GPU, `$0.004` disk, and `$0.011` download.
+The observed credit delta was `$1.7503081587`. Cleanup verification returned
+zero instances and zero volumes.
+
 ## 2026-07-22 — Phase 5 native CUDA candidate and winner-matching FP8 wiring
 
 The user explicitly moved the work into the performance phase and asked to

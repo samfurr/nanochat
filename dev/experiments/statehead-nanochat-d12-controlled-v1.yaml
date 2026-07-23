@@ -35,6 +35,9 @@ batch32_preflight_manifest: dev/experiments/statehead-nanochat-cuda-batch32-pref
 batch32_preflight_artifact: dev/results/statehead-nanochat-cuda-batch32-preflight-v1.json
 ddp_preflight_manifest: dev/experiments/statehead-nanochat-cuda-8gpu-preflight-v1.yaml
 ddp_preflight_artifact: dev/results/statehead-nanochat-cuda-8gpu-preflight-v1.json
+vast_ddp_preflight_report: dev/results/statehead-vast-8gpu-preflight-20260723/REPORT.md
+vast_ddp_preflight_artifact: dev/results/statehead-vast-8gpu-preflight-20260723/captured-result.json
+vast_ddp_preflight_status: completed_with_optional_host_parity_not_run
 optimizer: nanochat_muon_adamw
 headwise_muon: false
 training_steps: 2520
