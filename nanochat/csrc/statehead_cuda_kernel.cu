@@ -23,6 +23,7 @@ __device__ __forceinline__ float sigmoidf(float value) {
 template <typename scalar_t>
 __global__ void statehead_activate_gates_kernel(
     const scalar_t* __restrict__ gates,
+    const scalar_t* __restrict__ gate_bias,
     scalar_t* __restrict__ activated_gates,
     int64_t total_gate_states,
     int64_t gate_stride) {
@@ -36,13 +37,21 @@ __global__ void statehead_activate_gates_kernel(
   const int64_t state = item - token * gate_stride;
   const int64_t gate_base = token * 4 * gate_stride + state;
   activated_gates[gate_base] = static_cast<scalar_t>(
-      sigmoidf(static_cast<float>(gates[gate_base])));
+      sigmoidf(
+          static_cast<float>(gates[gate_base]) +
+          static_cast<float>(gate_bias[state])));
   activated_gates[gate_base + gate_stride] = static_cast<scalar_t>(
-      sigmoidf(static_cast<float>(gates[gate_base + gate_stride])));
+      sigmoidf(
+          static_cast<float>(gates[gate_base + gate_stride]) +
+          static_cast<float>(gate_bias[gate_stride + state])));
   activated_gates[gate_base + 2 * gate_stride] = static_cast<scalar_t>(
-      tanhf(static_cast<float>(gates[gate_base + 2 * gate_stride])));
+      tanhf(
+          static_cast<float>(gates[gate_base + 2 * gate_stride]) +
+          static_cast<float>(gate_bias[2 * gate_stride + state])));
   activated_gates[gate_base + 3 * gate_stride] = static_cast<scalar_t>(
-      sigmoidf(static_cast<float>(gates[gate_base + 3 * gate_stride])));
+      sigmoidf(
+          static_cast<float>(gates[gate_base + 3 * gate_stride]) +
+          static_cast<float>(gate_bias[3 * gate_stride + state])));
 }
 
 template <typename scalar_t>
@@ -339,12 +348,18 @@ __global__ void statehead_backward_chunk_grad_kernel(
 
 void check_inputs(
     const torch::Tensor& gates,
+    const torch::Tensor& gate_bias,
     const torch::Tensor& initial_state,
     int64_t chunk_size) {
   TORCH_CHECK(gates.is_cuda(), "gates must be a CUDA tensor");
+  TORCH_CHECK(gate_bias.is_cuda(), "gate_bias must be a CUDA tensor");
   TORCH_CHECK(initial_state.is_cuda(), "initial_state must be a CUDA tensor");
-  TORCH_CHECK(gates.device() == initial_state.device(), "devices must match");
+  TORCH_CHECK(
+      gates.device() == gate_bias.device() &&
+          gates.device() == initial_state.device(),
+      "devices must match");
   TORCH_CHECK(gates.is_contiguous(), "gates must be contiguous");
+  TORCH_CHECK(gate_bias.is_contiguous(), "gate_bias must be contiguous");
   TORCH_CHECK(initial_state.is_contiguous(), "initial_state must be contiguous");
   TORCH_CHECK(gates.dim() == 5, "gates must have shape [B, T, 4, H, Dh]");
   TORCH_CHECK(gates.size(2) == 4, "gates dimension 2 must have size 4");
@@ -352,7 +367,11 @@ void check_inputs(
   TORCH_CHECK(gates.size(0) == initial_state.size(0), "batch sizes must match");
   TORCH_CHECK(gates.size(3) == initial_state.size(1), "head counts must match");
   TORCH_CHECK(gates.size(4) == initial_state.size(2), "head dimensions must match");
+  TORCH_CHECK(
+      gate_bias.numel() == 4 * gates.size(3) * gates.size(4),
+      "gate_bias must have 4 * H * Dh elements");
   TORCH_CHECK(gates.size(1) > 0, "sequence length must be positive");
+  TORCH_CHECK(gates.scalar_type() == gate_bias.scalar_type(), "gate_bias dtype mismatch");
   TORCH_CHECK(gates.scalar_type() == initial_state.scalar_type(), "dtypes must match");
   TORCH_CHECK(
       gates.scalar_type() == torch::kFloat ||
@@ -370,9 +389,10 @@ void check_inputs(
 
 std::vector<torch::Tensor> statehead_forward_cuda(
     torch::Tensor gates,
+    torch::Tensor gate_bias,
     torch::Tensor initial_state,
     int64_t chunk_size) {
-  check_inputs(gates, initial_state, chunk_size);
+  check_inputs(gates, gate_bias, initial_state, chunk_size);
   const c10::cuda::CUDAGuard device_guard(gates.device());
 
   const int64_t batch = gates.size(0);
@@ -412,6 +432,7 @@ std::vector<torch::Tensor> statehead_forward_cuda(
         statehead_activate_gates_kernel<scalar_t>
             <<<gate_blocks, kForwardThreads, 0, stream>>>(
                 gates.data_ptr<scalar_t>(),
+                gate_bias.data_ptr<scalar_t>(),
                 activated_gates.data_ptr<scalar_t>(),
                 total_gate_states,
                 gate_stride);

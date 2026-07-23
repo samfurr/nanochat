@@ -153,21 +153,30 @@ class StateHeadBank(nn.Module):
         batch_size, sequence_len, n_embd = x.shape
         if state is None:
             state = self.fresh_state(batch_size, x.device, x.dtype)
-        gates = self.gate(x) + self.gate_bias.to(x.dtype)
-        gates = gates.view(batch_size, sequence_len, 4, self.n_head, self.head_dim)
+        gate_logits = self.gate(x)
         if scan_impl is None:
             scan_impl = self.scan_backend
         if scan_impl == "auto":
-            scan_impl = "cuda" if gates.is_cuda else "parallel"
+            scan_impl = "cuda" if gate_logits.is_cuda else "parallel"
         elif scan_impl == "pytorch":
             scan_impl = "parallel"
         if scan_impl == "cuda":
             from nanochat.statehead_cuda import statehead_scan_cuda
 
-            y, final_state = statehead_scan_cuda(gates, state, self.chunk_size)
+            gate_logits = gate_logits.view(
+                batch_size, sequence_len, 4, self.n_head, self.head_dim
+            )
+            y, final_state = statehead_scan_cuda(
+                gate_logits,
+                state,
+                self.chunk_size,
+                gate_bias=self.gate_bias.to(x.dtype),
+            )
             y = y.reshape(batch_size, sequence_len, n_embd)
             return self.out_proj(y), final_state
 
+        gates = gate_logits + self.gate_bias.to(x.dtype)
+        gates = gates.view(batch_size, sequence_len, 4, self.n_head, self.head_dim)
         a_logits, b_logits, c_logits, o_logits = gates.unbind(dim=2)
         a = torch.sigmoid(a_logits)
         u = torch.sigmoid(b_logits) * torch.tanh(c_logits)

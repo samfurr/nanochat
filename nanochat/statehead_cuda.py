@@ -83,21 +83,24 @@ def _statehead_scan_backward_fake(
 @torch.library.custom_op("nanochat::statehead_scan_forward", mutates_args=())
 def _statehead_scan_forward(
     gates: torch.Tensor,
+    gate_bias: torch.Tensor,
     initial_state: torch.Tensor,
     chunk_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    return tuple(_load_extension().forward(gates, initial_state, chunk_size))
+    return tuple(_load_extension().forward(gates, gate_bias, initial_state, chunk_size))
 
 
 @_statehead_scan_forward.register_fake
 def _statehead_scan_forward_fake(
     gates: torch.Tensor,
+    gate_bias: torch.Tensor,
     initial_state: torch.Tensor,
     chunk_size: int,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     batch, sequence_len, four, n_head, head_dim = gates.shape
     torch._check(four == 4)
     torch._check(initial_state.shape == (batch, n_head, head_dim))
+    torch._check(gate_bias.numel() == 4 * n_head * head_dim)
     n_chunks = (sequence_len + chunk_size - 1) // chunk_size
     output = gates.new_empty((batch, sequence_len, n_head, head_dim))
     chunk_initials = gates.new_empty(
@@ -112,10 +115,11 @@ def _statehead_scan_forward_fake(
 
 
 def _setup_forward_context(ctx, inputs, output):
-    _gates, _initial_state, chunk_size = inputs
+    _gates, gate_bias, _initial_state, chunk_size = inputs
     _y, _final_state, chunk_initials, activated_gates = output
     ctx.mark_non_differentiable(chunk_initials, activated_gates)
     ctx.save_for_backward(activated_gates, chunk_initials)
+    ctx.gate_bias_shape = gate_bias.shape
     ctx.chunk_size = chunk_size
 
 
@@ -141,7 +145,8 @@ def _forward_backward(
         grad_final_state.contiguous(),
         ctx.chunk_size,
     )
-    return grad_gates, grad_initial_state, None
+    grad_gate_bias = grad_gates.sum(dim=(0, 1)).reshape(ctx.gate_bias_shape)
+    return grad_gates, grad_gate_bias, grad_initial_state, None
 
 
 _statehead_scan_forward.register_autograd(
@@ -150,7 +155,7 @@ _statehead_scan_forward.register_autograd(
 )
 
 
-def statehead_scan_cuda(gates, initial_state, chunk_size=64):
+def statehead_scan_cuda(gates, initial_state, chunk_size=64, gate_bias=None):
     """Run the fused scan on raw gates shaped ``[B, T, 4, H, Dh]``."""
     if not gates.is_cuda or not initial_state.is_cuda:
         raise ValueError("statehead_scan_cuda requires CUDA tensors")
@@ -159,9 +164,15 @@ def statehead_scan_cuda(gates, initial_state, chunk_size=64):
     if chunk_size < 1 or chunk_size > 64:
         raise ValueError("native CUDA scan requires 1 <= chunk_size <= 64")
     gates = gates.contiguous()
+    if gate_bias is None:
+        gate_bias = gates.new_zeros((4, gates.size(3), gates.size(4)))
+    if gate_bias.numel() != 4 * gates.size(3) * gates.size(4):
+        raise ValueError("gate_bias must have 4 * H * Dh elements")
+    gate_bias = gate_bias.to(dtype=gates.dtype, device=gates.device).contiguous()
     initial_state = initial_state.to(dtype=gates.dtype).contiguous()
     output, final_state, _chunk_initials, _activated_gates = _statehead_scan_forward(
         gates,
+        gate_bias,
         initial_state,
         chunk_size,
     )

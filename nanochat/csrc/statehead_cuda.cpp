@@ -4,6 +4,7 @@
 
 std::vector<torch::Tensor> statehead_forward_cuda(
     torch::Tensor gates,
+    torch::Tensor gate_bias,
     torch::Tensor initial_state,
     int64_t chunk_size);
 
