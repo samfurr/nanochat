@@ -1216,3 +1216,39 @@ model/training source unchanged from b952753: passed
 manifests, exits, markers, shards, metadata, 5,040 finite losses,
   CORE aggregates, and both downloaded checkpoint hashes: passed
 ```
+
+## 2026-07-23 — StateHead CUDA v2 hierarchical backward gate
+
+Commit `52dd72e184bf1459009e9d99a4819a2634f872aa` replaced the native
+CUDA backward's serial all-chunk traversal with parallel reverse chunk
+summaries, a short reverse boundary scan, and parallel per-chunk gradient
+replay. The existing forward, gate/checkpoint layout, Python API, and GPT
+implementation remained unchanged.
+
+One verified Vast H100 SXM compiled the extension with PyTorch 2.9.1+cu128 and
+CUDA 12.8. The FP32 StateHead suite passed 89 tests, and the focused BF16
+native-CUDA/reverse-summary gate passed 45. At the compiled
+d12/768/2048/batch-32 fixed-synthetic-batch full-step shape:
+
+| Mode | Median tok/s | Peak allocated |
+|---|---:|---:|
+| StateHead CUDA v2, chunk 32 | 824,653 | 13.15 GiB |
+| StateHead CUDA v2, chunk 64 | 772,758 | 13.12 GiB |
+| StateHead compiled PyTorch, chunk 32 | 615,599 | 36.42 GiB |
+| GPT/FA3 | 530,591 | 27.40 GiB |
+
+Thus chunk 32 was 6.72% faster than chunk 64, 33.96% faster than the
+same-host compiled PyTorch StateHead control, and 55.42% faster than the
+same-host GPT/FA3 control. These are bounded synthetic speed results, not
+dataset learning parity. Chunk 16, Nsight profiling, FP8, and dataset-backed
+learning parity remain open.
+
+Vast instance `45636045` ran for approximately 23.17 minutes at an observed
+$3.02/hour, for an estimated $1.17 before deletion. Deletion and zero remaining
+instances were confirmed.
+
+Full evidence, limitations, checksums, commands, and the exact next command:
+
+```text
+dev/results/statehead-cuda-v2-gate-20260723/REPORT.md
+```

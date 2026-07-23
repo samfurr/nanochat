@@ -1,6 +1,6 @@
 # StateHead CUDA v2 optimization plan
 
-Status: implementation in progress
+Status: v2 hierarchical backward verified; optimization continues
 
 This document is the durable plan for optimizing StateHead after the Phase 3
 comparison. It complements `STATEHEAD_NANOCHAT_CODEX_BRIEF.md`; the checked-out
@@ -30,9 +30,22 @@ Local evidence:
 - Repository-wide suite: 96 passed, 50 CUDA skips, and one unrelated failure in
   the sandbox memory-limit enforcement test.
 
-CUDA compilation, CUDA numerical/gradient parity, and speed are not yet tested
-for this implementation and are not claimed. No Vast instance was active at
-the time of this checkpoint.
+One-H100 verification at commit
+`52dd72e184bf1459009e9d99a4819a2634f872aa` subsequently established:
+
+- CUDA 12.8/SM90 compilation and load passed.
+- FP32 suite: 89 passed.
+- Focused BF16 native-CUDA/reverse-summary gate: 45 passed.
+- At the d12/768/2048/batch-32 full-step shape, CUDA v2 chunk 32 reached
+  824,653 tok/s versus 772,758 for chunk 64, 615,599 for compiled PyTorch
+  StateHead, and 530,591 for GPT/FA3 on the same H100.
+- CUDA v2 chunk 32 peak allocation was 13.15 GiB versus 36.42 GiB for compiled
+  PyTorch StateHead.
+
+These are bounded fixed-synthetic-batch verification results. Dataset learning
+parity, FP8 stability, chunk 16, and Nsight profiling remain untested. The full
+evidence and command transcript are in
+`dev/results/statehead-cuda-v2-gate-20260723/REPORT.md`.
 
 ## Motivation
 

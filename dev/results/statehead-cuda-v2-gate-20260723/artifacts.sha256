@@ -1,0 +1,8 @@
+3509dfab1c4554a18b9df6929ffbb6355ce2235846c15f94b9e12c95204933a6  /root/statehead-cuda-v2-k64.json
+4c0d1d6b8f60f9dd5f34092c3ace233bcc23472b921df52824ebfecc3dd74977  /root/statehead-cuda-v2-k32.json
+e2e9374d941ddb08bd7193dc70baf524f61fa342ebc4cc1cd810850588389323  /root/statehead-pytorch-k32-control.json
+c316a40c837e6984adf8469124a181bd7c26469a20489dd7bc028d6f20920d24  /root/gpt-fa3-control.json
+afc809d89256007acd8bbb0904a53bdd3e433ed352ba61ea2d4ff0be4de0ec99  /root/fp32.log
+e4c989eae75a968eb9fac6e7bf3d4939f64183c7a25cc0ec471d390d23521369  /root/bf16.log
+4b9205b7375e154ba075ffdbba2fde5de1d9e6fb99a7c0e3a7cad2d4440b48f9  /root/environment.txt
+4fe2520dde1aea5a5afb722ad207f9e9dcf7c7a525ba9ad7d9008c3fe1ccbaa6  /root/native-cuda-load.log

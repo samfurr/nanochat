@@ -1,0 +1,267 @@
+........................................................................ [ 80%]
+........FF.......                                                        [100%]
+=================================== FAILURES ===================================
+____________________ test_checkpoint_round_trip[legacy-gpt] ____________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-2/test_checkpoint_round_trip_leg0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f6404447d90>
+model_type = None
+
+    @pytest.mark.parametrize(
+        "model_type",
+        [None, "gpt", "statehead"],
+        ids=["legacy-gpt", "gpt", "statehead"],
+    )
+    def test_checkpoint_round_trip(tmp_path, monkeypatch, model_type):
+        torch.manual_seed(13)
+        if model_type in (None, "gpt"):
+            config = GPTConfig(
+                sequence_len=8, vocab_size=64, n_layer=1, n_head=1,
+                n_kv_head=1, n_embd=32, window_pattern="L",
+            )
+            model = GPT(config)
+        else:
+            config = StateHeadConfig(
+                sequence_len=8, vocab_size=64, n_layer=1, n_head=4,
+                n_embd=32, scan_chunk_size=4,
+            )
+            model = StateHead(config)
+        model.init_weights()
+        model.eval()
+        tokens = torch.randint(0, config.vocab_size, (2, 8))
+>       expected = model(tokens)
+
+tests/test_statehead.py:537: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1775: in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1786: in _call_impl
+    return forward_call(*args, **kwargs)
+nanochat/gpt.py:502: in forward
+    x = block(x, ve, cos_sin, self.window_sizes[i], kv_cache)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1775: in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1786: in _call_impl
+    return forward_call(*args, **kwargs)
+nanochat/gpt.py:151: in forward
+    x = x + self.attn(norm(x), ve, cos_sin, window_size, kv_cache)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1775: in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1786: in _call_impl
+    return forward_call(*args, **kwargs)
+nanochat/gpt.py:110: in forward
+    y = flash_attn.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+nanochat/flash_attention.py:128: in flash_attn_func
+    return _fa3.flash_attn_func(q, k, v, causal=causal, window_size=window_size)
+../.cache/huggingface/hub/models--varunneal--flash-attention-3/snapshots/de87b9b5af06dd9984df595bef90b2eba44b181a/build/torch29-cxx11-cu128-x86_64-linux/flash_attention_3/flash_attn_interface.py:826: in flash_attn_func
+    return FlashAttnFunc.apply(
+.venv/lib/python3.10/site-packages/torch/autograd/function.py:581: in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+../.cache/huggingface/hub/models--varunneal--flash-attention-3/snapshots/de87b9b5af06dd9984df595bef90b2eba44b181a/build/torch29-cxx11-cu128-x86_64-linux/flash_attention_3/flash_attn_interface.py:539: in forward
+    out, softmax_lse, *rest = _flash_attn_forward(
+.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:676: in __call__
+    return self._opoverload(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/_ops.py:841: in __call__
+    return self._op(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/_library/autograd.py:111: in autograd_impl
+    result = forward_no_grad(*args, Metadata(keyset, keyword_only_args))
+.venv/lib/python3.10/site-packages/torch/_library/autograd.py:40: in forward_no_grad
+    result = op.redispatch(keyset & _C._after_autograd_keyset, *args, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <OpOverload(op='flash_attn_3._flash_attn_forward', overload='default')>
+keyset = DispatchKeySet(CPU)
+args = (tensor([[[[-2.1680e-01, -1.6016e+00, -3.3984e-01,  4.6484e-01,  9.4238e-02,
+           -1.0469e+00, -7.3438e-01,  8.2...,
+            7.3242e-02,  6.6406e-01]]]], dtype=torch.bfloat16,
+       grad_fn=<AddBackward0>), None, None, None, ...)
+kwargs = {}
+
+    def redispatch(
+        self, /, keyset: torch._C.DispatchKeySet, *args: _P.args, **kwargs: _P.kwargs
+    ) -> _T:
+>       return self._handle.redispatch_boxed(keyset, *args, **kwargs)  # type: ignore[return-value]
+E       NotImplementedError: Could not run 'flash_attn_3::_flash_attn_forward' with arguments from the 'CPU' backend. This could be because the operator doesn't exist for this backend, or was omitted during the selective/custom build process (if using custom build). If you are a Facebook employee using PyTorch on mobile, please visit https://fburl.com/ptmfixes for possible resolutions. 'flash_attn_3::_flash_attn_forward' is only available for these backends: [CUDA, Meta, BackendSelect, Python, FuncTorchDynamicLayerBackMode, Functionalize, Named, Conjugate, Negative, ZeroTensor, ADInplaceOrView, AutogradOther, AutogradCPU, AutogradCUDA, AutogradHIP, AutogradXLA, AutogradMPS, AutogradIPU, AutogradXPU, AutogradHPU, AutogradVE, AutogradLazy, AutogradMTIA, AutogradMAIA, AutogradPrivateUse1, AutogradPrivateUse2, AutogradPrivateUse3, AutogradMeta, AutogradNestedTensor, Tracer, AutocastCPU, AutocastMTIA, AutocastMAIA, AutocastXPU, AutocastMPS, AutocastCUDA, FuncTorchBatched, BatchedNestedTensor, FuncTorchVmapMode, Batched, VmapMode, FuncTorchGradWrapper, PythonTLSSnapshot, FuncTorchDynamicLayerFrontMode, PreDispatch, PythonDispatcher].
+E       
+E       CUDA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [kernel]
+E       Meta: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [kernel]
+E       BackendSelect: fallthrough registered at /pytorch/aten/src/ATen/core/BackendSelectFallbackKernel.cpp:3 [backend fallback]
+E       Python: registered at /pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:194 [backend fallback]
+E       FuncTorchDynamicLayerBackMode: registered at /pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:479 [backend fallback]
+E       Functionalize: registered at /pytorch/aten/src/ATen/FunctionalizeFallbackKernel.cpp:387 [backend fallback]
+E       Named: registered at /pytorch/aten/src/ATen/core/NamedRegistrations.cpp:7 [backend fallback]
+E       Conjugate: registered at /pytorch/aten/src/ATen/ConjugateFallback.cpp:17 [backend fallback]
+E       Negative: registered at /pytorch/aten/src/ATen/native/NegateFallback.cpp:18 [backend fallback]
+E       ZeroTensor: registered at /pytorch/aten/src/ATen/ZeroTensorFallback.cpp:115 [backend fallback]
+E       ADInplaceOrView: fallthrough registered at /pytorch/aten/src/ATen/core/VariableFallbackKernel.cpp:104 [backend fallback]
+E       AutogradOther: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradCPU: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradCUDA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradHIP: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradXLA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradMPS: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradIPU: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradXPU: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradHPU: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradVE: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradLazy: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradMTIA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradMAIA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradPrivateUse1: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradPrivateUse2: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradPrivateUse3: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradMeta: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradNestedTensor: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       Tracer: registered at /pytorch/torch/csrc/autograd/TraceTypeManual.cpp:294 [backend fallback]
+E       AutocastCPU: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:324 [backend fallback]
+E       AutocastMTIA: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:468 [backend fallback]
+E       AutocastMAIA: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:506 [backend fallback]
+E       AutocastXPU: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:544 [backend fallback]
+E       AutocastMPS: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:209 [backend fallback]
+E       AutocastCUDA: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:165 [backend fallback]
+E       FuncTorchBatched: registered at /pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:731 [backend fallback]
+E       BatchedNestedTensor: registered at /pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:758 [backend fallback]
+E       FuncTorchVmapMode: fallthrough registered at /pytorch/aten/src/ATen/functorch/VmapModeRegistrations.cpp:27 [backend fallback]
+E       Batched: registered at /pytorch/aten/src/ATen/LegacyBatchingRegistrations.cpp:1075 [backend fallback]
+E       VmapMode: fallthrough registered at /pytorch/aten/src/ATen/VmapModeRegistrations.cpp:33 [backend fallback]
+E       FuncTorchGradWrapper: registered at /pytorch/aten/src/ATen/functorch/TensorWrapper.cpp:210 [backend fallback]
+E       PythonTLSSnapshot: registered at /pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:202 [backend fallback]
+E       FuncTorchDynamicLayerFrontMode: registered at /pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:475 [backend fallback]
+E       PreDispatch: registered at /pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:206 [backend fallback]
+E       PythonDispatcher: registered at /pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:198 [backend fallback]
+
+.venv/lib/python3.10/site-packages/torch/_ops.py:848: NotImplementedError
+_______________________ test_checkpoint_round_trip[gpt] ________________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-2/test_checkpoint_round_trip_gpt0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f63b59631c0>
+model_type = 'gpt'
+
+    @pytest.mark.parametrize(
+        "model_type",
+        [None, "gpt", "statehead"],
+        ids=["legacy-gpt", "gpt", "statehead"],
+    )
+    def test_checkpoint_round_trip(tmp_path, monkeypatch, model_type):
+        torch.manual_seed(13)
+        if model_type in (None, "gpt"):
+            config = GPTConfig(
+                sequence_len=8, vocab_size=64, n_layer=1, n_head=1,
+                n_kv_head=1, n_embd=32, window_pattern="L",
+            )
+            model = GPT(config)
+        else:
+            config = StateHeadConfig(
+                sequence_len=8, vocab_size=64, n_layer=1, n_head=4,
+                n_embd=32, scan_chunk_size=4,
+            )
+            model = StateHead(config)
+        model.init_weights()
+        model.eval()
+        tokens = torch.randint(0, config.vocab_size, (2, 8))
+>       expected = model(tokens)
+
+tests/test_statehead.py:537: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1775: in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1786: in _call_impl
+    return forward_call(*args, **kwargs)
+nanochat/gpt.py:502: in forward
+    x = block(x, ve, cos_sin, self.window_sizes[i], kv_cache)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1775: in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1786: in _call_impl
+    return forward_call(*args, **kwargs)
+nanochat/gpt.py:151: in forward
+    x = x + self.attn(norm(x), ve, cos_sin, window_size, kv_cache)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1775: in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/nn/modules/module.py:1786: in _call_impl
+    return forward_call(*args, **kwargs)
+nanochat/gpt.py:110: in forward
+    y = flash_attn.flash_attn_func(q, k, v, causal=True, window_size=window_size)
+nanochat/flash_attention.py:128: in flash_attn_func
+    return _fa3.flash_attn_func(q, k, v, causal=causal, window_size=window_size)
+../.cache/huggingface/hub/models--varunneal--flash-attention-3/snapshots/de87b9b5af06dd9984df595bef90b2eba44b181a/build/torch29-cxx11-cu128-x86_64-linux/flash_attention_3/flash_attn_interface.py:826: in flash_attn_func
+    return FlashAttnFunc.apply(
+.venv/lib/python3.10/site-packages/torch/autograd/function.py:581: in apply
+    return super().apply(*args, **kwargs)  # type: ignore[misc]
+../.cache/huggingface/hub/models--varunneal--flash-attention-3/snapshots/de87b9b5af06dd9984df595bef90b2eba44b181a/build/torch29-cxx11-cu128-x86_64-linux/flash_attention_3/flash_attn_interface.py:539: in forward
+    out, softmax_lse, *rest = _flash_attn_forward(
+.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:676: in __call__
+    return self._opoverload(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/_ops.py:841: in __call__
+    return self._op(*args, **kwargs)
+.venv/lib/python3.10/site-packages/torch/_library/autograd.py:111: in autograd_impl
+    result = forward_no_grad(*args, Metadata(keyset, keyword_only_args))
+.venv/lib/python3.10/site-packages/torch/_library/autograd.py:40: in forward_no_grad
+    result = op.redispatch(keyset & _C._after_autograd_keyset, *args, **kwargs)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <OpOverload(op='flash_attn_3._flash_attn_forward', overload='default')>
+keyset = DispatchKeySet(CPU)
+args = (tensor([[[[-2.1680e-01, -1.6016e+00, -3.3984e-01,  4.6484e-01,  9.4238e-02,
+           -1.0469e+00, -7.3438e-01,  8.2...,
+            7.3242e-02,  6.6406e-01]]]], dtype=torch.bfloat16,
+       grad_fn=<AddBackward0>), None, None, None, ...)
+kwargs = {}
+
+    def redispatch(
+        self, /, keyset: torch._C.DispatchKeySet, *args: _P.args, **kwargs: _P.kwargs
+    ) -> _T:
+>       return self._handle.redispatch_boxed(keyset, *args, **kwargs)  # type: ignore[return-value]
+E       NotImplementedError: Could not run 'flash_attn_3::_flash_attn_forward' with arguments from the 'CPU' backend. This could be because the operator doesn't exist for this backend, or was omitted during the selective/custom build process (if using custom build). If you are a Facebook employee using PyTorch on mobile, please visit https://fburl.com/ptmfixes for possible resolutions. 'flash_attn_3::_flash_attn_forward' is only available for these backends: [CUDA, Meta, BackendSelect, Python, FuncTorchDynamicLayerBackMode, Functionalize, Named, Conjugate, Negative, ZeroTensor, ADInplaceOrView, AutogradOther, AutogradCPU, AutogradCUDA, AutogradHIP, AutogradXLA, AutogradMPS, AutogradIPU, AutogradXPU, AutogradHPU, AutogradVE, AutogradLazy, AutogradMTIA, AutogradMAIA, AutogradPrivateUse1, AutogradPrivateUse2, AutogradPrivateUse3, AutogradMeta, AutogradNestedTensor, Tracer, AutocastCPU, AutocastMTIA, AutocastMAIA, AutocastXPU, AutocastMPS, AutocastCUDA, FuncTorchBatched, BatchedNestedTensor, FuncTorchVmapMode, Batched, VmapMode, FuncTorchGradWrapper, PythonTLSSnapshot, FuncTorchDynamicLayerFrontMode, PreDispatch, PythonDispatcher].
+E       
+E       CUDA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [kernel]
+E       Meta: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [kernel]
+E       BackendSelect: fallthrough registered at /pytorch/aten/src/ATen/core/BackendSelectFallbackKernel.cpp:3 [backend fallback]
+E       Python: registered at /pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:194 [backend fallback]
+E       FuncTorchDynamicLayerBackMode: registered at /pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:479 [backend fallback]
+E       Functionalize: registered at /pytorch/aten/src/ATen/FunctionalizeFallbackKernel.cpp:387 [backend fallback]
+E       Named: registered at /pytorch/aten/src/ATen/core/NamedRegistrations.cpp:7 [backend fallback]
+E       Conjugate: registered at /pytorch/aten/src/ATen/ConjugateFallback.cpp:17 [backend fallback]
+E       Negative: registered at /pytorch/aten/src/ATen/native/NegateFallback.cpp:18 [backend fallback]
+E       ZeroTensor: registered at /pytorch/aten/src/ATen/ZeroTensorFallback.cpp:115 [backend fallback]
+E       ADInplaceOrView: fallthrough registered at /pytorch/aten/src/ATen/core/VariableFallbackKernel.cpp:104 [backend fallback]
+E       AutogradOther: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradCPU: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradCUDA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradHIP: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradXLA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradMPS: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradIPU: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradXPU: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradHPU: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradVE: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradLazy: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradMTIA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradMAIA: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradPrivateUse1: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradPrivateUse2: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradPrivateUse3: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradMeta: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       AutogradNestedTensor: registered at /root/nanochat/.venv/lib/python3.10/site-packages/torch/_library/custom_ops.py:911 [autograd kernel]
+E       Tracer: registered at /pytorch/torch/csrc/autograd/TraceTypeManual.cpp:294 [backend fallback]
+E       AutocastCPU: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:324 [backend fallback]
+E       AutocastMTIA: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:468 [backend fallback]
+E       AutocastMAIA: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:506 [backend fallback]
+E       AutocastXPU: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:544 [backend fallback]
+E       AutocastMPS: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:209 [backend fallback]
+E       AutocastCUDA: fallthrough registered at /pytorch/aten/src/ATen/autocast_mode.cpp:165 [backend fallback]
+E       FuncTorchBatched: registered at /pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:731 [backend fallback]
+E       BatchedNestedTensor: registered at /pytorch/aten/src/ATen/functorch/LegacyBatchingRegistrations.cpp:758 [backend fallback]
+E       FuncTorchVmapMode: fallthrough registered at /pytorch/aten/src/ATen/functorch/VmapModeRegistrations.cpp:27 [backend fallback]
+E       Batched: registered at /pytorch/aten/src/ATen/LegacyBatchingRegistrations.cpp:1075 [backend fallback]
+E       VmapMode: fallthrough registered at /pytorch/aten/src/ATen/VmapModeRegistrations.cpp:33 [backend fallback]
+E       FuncTorchGradWrapper: registered at /pytorch/aten/src/ATen/functorch/TensorWrapper.cpp:210 [backend fallback]
+E       PythonTLSSnapshot: registered at /pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:202 [backend fallback]
+E       FuncTorchDynamicLayerFrontMode: registered at /pytorch/aten/src/ATen/functorch/DynamicLayer.cpp:475 [backend fallback]
+E       PreDispatch: registered at /pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:206 [backend fallback]
+E       PythonDispatcher: registered at /pytorch/aten/src/ATen/core/PythonFallbackKernel.cpp:198 [backend fallback]
+
+.venv/lib/python3.10/site-packages/torch/_ops.py:848: NotImplementedError
+=========================== short test summary info ============================
+FAILED tests/test_statehead.py::test_checkpoint_round_trip[legacy-gpt] - NotI...
+FAILED tests/test_statehead.py::test_checkpoint_round_trip[gpt] - NotImplemen...
+2 failed, 87 passed in 66.25s (0:01:06)
