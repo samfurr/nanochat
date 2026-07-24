@@ -1,0 +1,11 @@
+a924edbe444cd3bc4da442daea85d264cec023ddcb24745bd13e667001fbcad2  /workspace/nanochat-statehead-d32/results/statehead-d32-fp8-99m-core.csv
+d649c345ee7fe64c4f00b9377f4bb467dcf3ea2f8c4053efad099304695dc42d  /workspace/nanochat-statehead-d32/results/statehead-d32-fp8-99m-meta_005168.json
+4283abbfb8456da5dc46f3281c8407d86af0e2d82a3a3cdaf539821ffc26a20d  /workspace/nanochat-statehead-d32/results/statehead-d32-fp8-99m-model_005168.pt
+d82c8d00a49579e7efc89c12a4b9d4e4f6bcd5e3214a0aed3cb84c37fca71787  /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m/optim_005168_rank0.pt
+aec53a812f58d07dca0597e850d1510c5e02dc8e55f8bd7246dd8c74599416ad  /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m/optim_005168_rank1.pt
+76835dc214e1ac93c5f46740d1564bc218cc2bda27b83a0379388ae43e7263bd  /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m/optim_005168_rank2.pt
+96dd1aac938e943b7774dc984eca44110c4255251483a3c3b8d023a7fb9f892e  /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m/optim_005168_rank3.pt
+5a2554ace3dca8325a59eb00f7b329c76019aa321df5b7459b473a7289efae66  /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m/optim_005168_rank4.pt
+da589bf4352f944dbc0eba129a21260f4b8255d70ba4085433ba7a449338fc74  /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m/optim_005168_rank5.pt
+55bcc1f540af95d4501ea592e0eedd71c1abc7f9edfe84a420b6e74e2f7ff961  /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m/optim_005168_rank6.pt
+2751fc07e30d96fae0c42821d498a04682efa2fa433e3e91284b939cabbcf979  /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m/optim_005168_rank7.pt

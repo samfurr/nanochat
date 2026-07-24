@@ -1,7 +1,8 @@
 experiment_id: statehead-nanochat-d32-fp8-99m-v1
-status: approved_not_launched
+status: completed_below_gpt2_threshold
 purpose: statehead_only_99_minute_time_to_gpt2_attempt
 source_commit: f68feae68a6be965c8f76c40026cb134aba2c216
+launch_checkout_commit: ede67fb538fe8e947c6b1525002d465bf39bb076
 runner: runs/statehead_d32_fp8_99m.sh
 architecture: statehead
 comparison_reference:
@@ -46,6 +47,15 @@ training:
   validation_tokens: 41943040
   checkpoint_schedule: final_only
   checkpoint_selection: predetermined_calibrated_final_step
+  calibrated_iterations: 5168
+  total_tokens: 5419040768
+  tokens_per_scaling_parameter: 7.34
+  measured_training_seconds: 5970.262143373489
+  measured_training_minutes: 99.50436905622482
+  training_command_wall_seconds: 6020
+  median_tokens_per_second_after_warmup: 905565
+  mean_tokens_per_second_after_warmup: 905751.7479154547
+  peak_memory_mib: 25625.78
 evaluation:
   command: scripts.base_eval
   suites:
@@ -53,6 +63,10 @@ evaluation:
     - bpb
   full_core_max_per_task: -1
   reserved_wall_minutes: 99
+  train_bpb: 0.825806
+  validation_bpb: 0.824316
+  core: 0.137938
+  gpt2_threshold_delta: -0.118587
 data:
   dataset: karpathy/climbmix-400b-shuffle
   train_shards: shard_00000.parquet_through_shard_00169.parquet
@@ -71,6 +85,17 @@ paid_gate:
     - dataset_training_loss_finite_and_decreasing
     - dataset_validation_bpb_finite_and_decreasing
     - calibrated_steps_between_1000_and_20000
+  observed:
+    fp8_linear_count: 65
+    gradient_finiteness: passed
+    parameter_checksum_spread: 0.0
+    peak_allocated_bytes_per_rank: 23782129152
+    steady_global_tokens_per_second_median: 736199.4949140257
+    calibration_initial_validation_bpb: 3.160622
+    calibration_final_validation_bpb: 1.279521
+    calibration_initial_training_loss: 10.400154
+    calibration_final_training_loss: 4.319742
+    calibration_seconds_per_step: 1.1518198670002453
 infrastructure:
   provider: vastai
   offer_id: 40228016
@@ -86,6 +111,13 @@ infrastructure:
   maximum_total_experiment_charge_usd: 70.00
   termination_guard: required
   delete_after_artifact_retrieval: true
+  replacement_instance_id: 45647442
+  failed_initial_instance_id: 45647137
+  replacement_instance_invoice_usd: 41.385
+  failed_initial_instance_invoice_usd: 2.628
+  total_experiment_invoice_usd: 44.013
+  post_cleanup_instances: 0
+  post_cleanup_volumes: 0
 approval:
   user_approved: true
   approved_utc: 2026-07-23
@@ -96,6 +128,12 @@ next_if_unsuccessful:
   depth: 24
   purpose: same_depth_and_width_followup_to_gpt_winner
 claims:
-  learning_parity: not_yet_demonstrated
-  gpt2_core_parity: not_yet_demonstrated
-  leaderboard_parity: not_yet_demonstrated
+  learning_parity: false
+  gpt2_core_parity: false
+  leaderboard_parity: false
+results:
+  tracked_evidence: dev/results/statehead-vast-d32-fp8-99m-20260724
+  full_local_bundle: dev-ignore/statehead-vast-d32-fp8-99m-20260724/results
+  final_model_sha256: 4283abbfb8456da5dc46f3281c8407d86af0e2d82a3a3cdaf539821ffc26a20d
+  core_csv_sha256: a924edbe444cd3bc4da442daea85d264cec023ddcb24745bd13e667001fbcad2
+  metadata_sha256: d649c345ee7fe64c4f00b9377f4bb467dcf3ea2f8c4053efad099304695dc42d

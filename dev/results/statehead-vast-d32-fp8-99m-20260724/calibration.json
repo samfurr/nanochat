@@ -1,0 +1,12 @@
+{
+  "gate_step": 125,
+  "timed_gate_steps": 114,
+  "gate_training_seconds": 131.30746483802795,
+  "seconds_per_step": 1.1518198670002453,
+  "target_training_seconds": 5940,
+  "calibrated_training_steps": 5168,
+  "initial_validation_bpb": 3.160622,
+  "final_validation_bpb": 1.279521,
+  "initial_training_loss": 10.400154,
+  "final_training_loss": 4.319742
+}

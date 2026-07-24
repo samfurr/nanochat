@@ -1,0 +1,8 @@
+started_utc=2026-07-23T23:43:09Z
+model_code_commit=f68feae68a6be965c8f76c40026cb134aba2c216
+checkout_head=ede67fb538fe8e947c6b1525002d465bf39bb076
+checkout_status_begin
+checkout_status_end
+python=Python 3.10.20
+torch=2.9.1+cu128
+cuda=12.8

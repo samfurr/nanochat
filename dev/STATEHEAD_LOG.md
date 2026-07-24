@@ -1306,3 +1306,43 @@ and checksums:
 ```text
 dev/results/statehead-cuda-v4-optimization-20260723/REPORT.md
 ```
+
+## 2026-07-24 — StateHead d32 CUDA v4 FP8 99-minute result
+
+The parameter-matched StateHead d32 run completed on a single 8x H100 80GB
+HBM3 Vast node using the accepted CUDA v4 scan, chunk size 32, tensorwise FP8
+eligible projections, BF16 activations, and FP32 recurrence. The production
+gate passed CUDA compilation, finite gradients, 65 FP8 linears, and exact
+cross-rank parameter synchronization. A 125-step real-data calibration reduced
+validation BPB from `3.160622` to `1.279521` and selected a fixed 5,168-step
+horizon.
+
+The fresh seed-1337 full run trained on 5,419,040,768 tokens. Measured trainer
+time was `5,970.262` seconds (99.504 minutes), 30.262 seconds over the nominal
+99-minute target. Median logged throughput after warmup was `905,565 tok/s`;
+validation BPB was `0.824316`.
+
+Final full CORE was **0.137938**, `0.118587` below the GPT-2 threshold of
+`0.256525`. This does not demonstrate learning, GPT-2, or leaderboard parity.
+The final checkpoint and all lightweight evidence were verified locally before
+the Vast instance was destroyed.
+
+The two Vast invoices totaled `$44.013`, under the approved `$70` ceiling.
+The final audit showed zero instances and zero volumes.
+
+The requested d24/width-1,536 follow-up would have 333,447,168 scaling
+parameters, only 45.69% of GPT d24. It should be treated as a separately
+calibrated throughput/schedule experiment, not a parameter-matched rerun.
+
+Full metrics, per-task CORE, artifacts, hashes, failures, cost, command ledger,
+unresolved questions, and the exact next local command:
+
+```text
+dev/results/statehead-vast-d32-fp8-99m-20260724/REPORT.md
+```
+
+Final local verification passed: 53 focused StateHead tests with 36 skipped,
+96 broader tests with 50 skipped and the known macOS memory-limit test
+deselected, runner syntax/dry run, source-pin diff, compileall, artifact
+metadata/CORE/hash checks, and a five-step BF16/MPS smoke whose loss decreased
+from `5.924298` to `5.923664`.

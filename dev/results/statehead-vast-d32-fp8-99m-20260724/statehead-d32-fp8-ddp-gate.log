@@ -1,0 +1,134 @@
+2026-07-23 23:35:13,834 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 8
+Scaling the LR for the AdamW parameters ∝1/√(2048/768) = 0.612372
+step=0 loss=10.398470 max_rank_seconds=64.277 global_tok_per_sec=2,039
+step=1 loss=14.188738 max_rank_seconds=0.177 global_tok_per_sec=738,759
+step=2 loss=12.869864 max_rank_seconds=0.178 global_tok_per_sec=736,199
+step=3 loss=10.662399 max_rank_seconds=0.178 global_tok_per_sec=735,448
+{
+  "probe": "cuda_full_step_comparison",
+  "scientific_result": false,
+  "architecture": "statehead",
+  "repo_commit": "45652a2236577288f1c9b06a0ad670ff8edc177b",
+  "torch_version": "2.9.1+cu128",
+  "cuda_version": "12.8",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "world_size": 8,
+  "compiled": true,
+  "seed": 1337,
+  "precision": "torch.bfloat16",
+  "fp8": true,
+  "fp8_linear_count": 65,
+  "gradient_finiteness_checked": true,
+  "config": {
+    "arch": "statehead",
+    "device_batch_size": 8,
+    "steps": 4,
+    "warmup_steps": 1,
+    "seed": 1337,
+    "sequence_length": 2048,
+    "layers": 32,
+    "model_width": 2048,
+    "heads": 16,
+    "vocab_size": 32768,
+    "scan_chunk_size": 32,
+    "scan_backend": "cuda",
+    "fp8": true,
+    "eager": false,
+    "verify_gradients": true,
+    "nsys_capture": false,
+    "output": "/workspace/nanochat-statehead-d32/results/statehead-d32-fp8-ddp-gate.json"
+  },
+  "parameter_counts": {
+    "wte": 67108864,
+    "lm_head": 67108864,
+    "statehead_matrices": 671088640,
+    "statehead_vectors": 327680,
+    "transformer_matrices": 671088640,
+    "scalars": 90,
+    "total": 805634138
+  },
+  "scaling_params": 738197504,
+  "flops_per_token": 4429774992,
+  "state_bytes_per_rank": 1048576,
+  "optimizer_groups": [
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 67108864
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 67108864
+    },
+    {
+      "kind": "adamw",
+      "tensors": 64,
+      "parameters": 327680
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 32
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 32
+    },
+    {
+      "kind": "adamw",
+      "tensors": 3,
+      "parameters": 26
+    },
+    {
+      "kind": "muon",
+      "tensors": 32,
+      "parameters": 134217728
+    },
+    {
+      "kind": "muon",
+      "tensors": 32,
+      "parameters": 536870912
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "loss_rank0": 10.398469924926758,
+      "seconds_max_rank": 64.2769634979777,
+      "global_tokens_per_second": 2039.1753571887978
+    },
+    {
+      "step": 1,
+      "loss_rank0": 14.188737869262695,
+      "seconds_max_rank": 0.17742178216576576,
+      "global_tokens_per_second": 738759.3473587082
+    },
+    {
+      "step": 2,
+      "loss_rank0": 12.869863510131836,
+      "seconds_max_rank": 0.17803869862109423,
+      "global_tokens_per_second": 736199.4949140257
+    },
+    {
+      "step": 3,
+      "loss_rank0": 10.662399291992188,
+      "seconds_max_rank": 0.1782206827774644,
+      "global_tokens_per_second": 735447.7491462835
+    }
+  ],
+  "steady_state": {
+    "excluded_warmup_steps": 1,
+    "measured_steps": 3,
+    "seconds_median_max_rank": 0.17803869862109423,
+    "seconds_mean_max_rank": 0.17789372118810812,
+    "global_tokens_per_second_median": 736199.4949140257,
+    "global_tokens_per_second_mean": 736802.1971396725,
+    "loss_first_rank0": 14.188737869262695,
+    "loss_last_rank0": 10.662399291992188
+  },
+  "peak_allocated_bytes_max_rank": 23782129152,
+  "peak_reserved_bytes_max_rank": 25736249344,
+  "parameter_checksum_spread": 0.0
+}

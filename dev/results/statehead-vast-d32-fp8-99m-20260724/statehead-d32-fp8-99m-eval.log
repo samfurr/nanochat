@@ -1,0 +1,43 @@
+2026-07-24 01:23:49,585 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 8
+2026-07-24 01:23:49,587 - nanochat.checkpoint_manager - [32m[1mINFO[0m - Loading model from /workspace/nanochat-statehead-d32/base_checkpoints/statehead-d32-fp8-99m with step 5168
+2026-07-24 01:23:51,256 - nanochat.checkpoint_manager - [32m[1mINFO[0m - Building model with config: {'sequence_len': 2048, 'vocab_size': 32768, 'n_layer': 32, 'n_head': 16, 'n_embd': 2048, 'scan_chunk_size': 32, 'scan_backend': 'cuda', 'retention_bias': 2.0, 'learned_initial_state': True}
+Evaluating model: base_model (step 5168)
+Eval modes: bpb, core
+
+================================================================================
+BPB Evaluation
+================================================================================
+train bpb: 0.825806
+val bpb: 0.824316
+
+================================================================================
+CORE Evaluation
+================================================================================
+Downloading https://karpathy-public.s3.us-west-2.amazonaws.com/eval_bundle.zip...
+Downloaded to /workspace/nanochat-statehead-d32/eval_bundle.zip
+Placed eval_bundle directory at /workspace/nanochat-statehead-d32/eval_bundle
+Evaluating: hellaswag_zeroshot (0-shot, type: multiple_choice)... accuracy: 0.4231 | centered: 0.2308 | time: 13.16s
+Evaluating: jeopardy (10-shot, type: language_modeling)... accuracy: 0.0052 | centered: 0.0052 | time: 2.77s
+Evaluating: bigbench_qa_wikidata (10-shot, type: language_modeling)... accuracy: 0.2708 | centered: 0.2708 | time: 26.47s
+Evaluating: arc_easy (10-shot, type: multiple_choice)... accuracy: 0.6086 | centered: 0.4781 | time: 3.83s
+Evaluating: arc_challenge (10-shot, type: multiple_choice)... accuracy: 0.3379 | centered: 0.1172 | time: 2.01s
+Evaluating: copa (0-shot, type: multiple_choice)... accuracy: 0.6100 | centered: 0.2200 | time: 0.16s
+Evaluating: commonsense_qa (10-shot, type: multiple_choice)... accuracy: 0.2867 | centered: 0.1083 | time: 2.27s
+Evaluating: piqa (10-shot, type: multiple_choice)... accuracy: 0.7127 | centered: 0.4255 | time: 2.64s
+Evaluating: openbook_qa (0-shot, type: multiple_choice)... accuracy: 0.3620 | centered: 0.1493 | time: 0.66s
+Evaluating: lambada_openai (0-shot, type: language_modeling)... accuracy: 0.2269 | centered: 0.2269 | time: 6.25s
+Evaluating: hellaswag (10-shot, type: multiple_choice)... accuracy: 0.4198 | centered: 0.2264 | time: 29.18s
+Evaluating: winograd (0-shot, type: schema)... accuracy: 0.5751 | centered: 0.1502 | time: 0.34s
+Evaluating: winogrande (0-shot, type: schema)... accuracy: 0.5075 | centered: 0.0150 | time: 1.51s
+Evaluating: bigbench_dyck_languages (10-shot, type: language_modeling)... accuracy: 0.0000 | centered: 0.0000 | time: 1.38s
+Evaluating: agi_eval_lsat_ar (3-shot, type: multiple_choice)... accuracy: 0.2261 | centered: 0.0326 | time: 0.68s
+Evaluating: bigbench_cs_algorithms (10-shot, type: language_modeling)... accuracy: 0.0023 | centered: 0.0023 | time: 1.74s
+Evaluating: bigbench_operators (10-shot, type: language_modeling)... accuracy: 0.1048 | centered: 0.1048 | time: 0.28s
+Evaluating: bigbench_repeat_copy_logic (10-shot, type: language_modeling)... accuracy: 0.0000 | centered: 0.0000 | time: 0.04s
+Evaluating: squad (10-shot, type: language_modeling)... accuracy: 0.0252 | centered: 0.0252 | time: 23.16s
+Evaluating: coqa (0-shot, type: language_modeling)... accuracy: 0.0878 | centered: 0.0878 | time: 10.56s
+Evaluating: boolq (10-shot, type: multiple_choice)... accuracy: 0.6135 | centered: -0.0172 | time: 9.17s
+Evaluating: bigbench_language_identification (10-shot, type: multiple_choice)... accuracy: 0.2506 | centered: 0.1756 | time: 49.79s
+
+Results written to: /workspace/nanochat-statehead-d32/base_eval/base_model_005168.csv
+CORE metric: 0.1379
