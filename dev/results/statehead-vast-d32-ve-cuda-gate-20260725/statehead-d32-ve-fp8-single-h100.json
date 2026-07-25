@@ -1,0 +1,128 @@
+{
+  "probe": "cuda_full_step_comparison",
+  "scientific_result": false,
+  "architecture": "statehead",
+  "repo_commit": "b5abb8aa841ec8525bcba9651697d6a27b32fe11",
+  "torch_version": "2.9.1+cu128",
+  "cuda_version": "12.8",
+  "gpu": "NVIDIA H100 80GB HBM3",
+  "world_size": 1,
+  "compiled": true,
+  "seed": 1337,
+  "precision": "torch.bfloat16",
+  "fp8": true,
+  "fp8_linear_count": 65,
+  "gradient_finiteness_checked": true,
+  "config": {
+    "arch": "statehead",
+    "device_batch_size": 1,
+    "steps": 2,
+    "warmup_steps": 1,
+    "seed": 1337,
+    "sequence_length": 2048,
+    "layers": 32,
+    "model_width": 2048,
+    "heads": 16,
+    "vocab_size": 32768,
+    "scan_chunk_size": 32,
+    "scan_backend": "cuda",
+    "value_embeddings": true,
+    "fp8": true,
+    "eager": false,
+    "verify_gradients": true,
+    "nsys_capture": false,
+    "output": "/root/results/statehead-d32-ve-fp8-single-h100.json"
+  },
+  "parameter_counts": {
+    "wte": 67108864,
+    "value_embeds": 1073741824,
+    "lm_head": 67108864,
+    "statehead_matrices": 671091712,
+    "statehead_vectors": 327680,
+    "transformer_matrices": 671091712,
+    "scalars": 90,
+    "total": 1879379034
+  },
+  "scaling_params": 738200576,
+  "flops_per_token": 4429793424,
+  "state_bytes_per_rank": 131072,
+  "optimizer_groups": [
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 67108864
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 67108864
+    },
+    {
+      "kind": "adamw",
+      "tensors": 16,
+      "parameters": 1073741824
+    },
+    {
+      "kind": "adamw",
+      "tensors": 64,
+      "parameters": 327680
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 32
+    },
+    {
+      "kind": "adamw",
+      "tensors": 1,
+      "parameters": 32
+    },
+    {
+      "kind": "adamw",
+      "tensors": 3,
+      "parameters": 26
+    },
+    {
+      "kind": "muon",
+      "tensors": 16,
+      "parameters": 3072
+    },
+    {
+      "kind": "muon",
+      "tensors": 32,
+      "parameters": 134217728
+    },
+    {
+      "kind": "muon",
+      "tensors": 32,
+      "parameters": 536870912
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "loss_rank0": 10.399178504943848,
+      "seconds_max_rank": 132.38843391404953,
+      "global_tokens_per_second": 15.469629328266107
+    },
+    {
+      "step": 1,
+      "loss_rank0": 3.1316897869110107,
+      "seconds_max_rank": 0.15021215798333287,
+      "global_tokens_per_second": 13634.049516998753
+    }
+  ],
+  "steady_state": {
+    "excluded_warmup_steps": 1,
+    "measured_steps": 1,
+    "seconds_median_max_rank": 0.15021215798333287,
+    "seconds_mean_max_rank": 0.15021215798333287,
+    "global_tokens_per_second_median": 13634.049516998753,
+    "global_tokens_per_second_mean": 13634.049516998753,
+    "loss_first_rank0": 3.1316897869110107,
+    "loss_last_rank0": 3.1316897869110107
+  },
+  "peak_allocated_bytes_max_rank": 29656220160,
+  "peak_reserved_bytes_max_rank": 34441527296,
+  "parameter_checksum_spread": 0.0
+}

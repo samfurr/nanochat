@@ -1,5 +1,5 @@
 experiment_id: statehead-nanochat-d32-ve-fp8-99m-curve-v1
-status: prepared_not_launched
+status: cuda_gate_passed_awaiting_full_run_approval
 purpose: test_d32_statehead_with_gpt_style_value_embeddings_at_fixed_99_minute_budget
 source_commit: 0e8e426c33d46ef28a4da1362ec5c7a5a181621a
 runner: runs/statehead_d32_ve_fp8_99m_curve.sh
@@ -94,14 +94,43 @@ paid_gate:
     - dataset_validation_bpb_finite_and_decreasing
     - calibrated_steps_between_1000_and_20000
     - at_least_100_gib_free
+  single_h100_observed:
+    instance_id: 45761418
+    offer_id: 41819343
+    completed_utc: 2026-07-25
+    gpu: NVIDIA_H100_80GB_HBM3
+    torch: 2.9.1+cu128
+    cuda: "12.8"
+    focused_cuda_value_tests: 9
+    focused_cuda_value_tests_deselected: 95
+    production_shape_compiled: true
+    production_shape_device_batch_size: 1
+    production_shape_fp8_linear_count: 65
+    production_shape_gradient_finiteness: passed
+    production_shape_parameter_checksum_spread: 0.0
+    production_shape_loss_steps: [10.399178504943848, 3.1316897869110107]
+    production_shape_peak_allocated_bytes: 29656220160
+    production_shape_peak_reserved_bytes: 34441527296
+    final_invoice_usd: 0.405
+    post_cleanup_instances: 0
+    post_cleanup_volumes: 0
 infrastructure:
   provider: vastai
   hardware: 8x_NVIDIA_H100_80GB_HBM3_single_node
   interruptible: false
   minimum_local_disk_gb: 150
   termination_guard_hours: 4
-  exact_offer: pending
-  exact_hourly_price_usd: pending
+  exact_offer:
+    observed_utc: 2026-07-25
+    offer_id: 45759640
+    verification: verified
+    reliability: 0.9348576
+    geolocation: US
+    nvlink_bandwidth_gbps: 478.1160888671875
+    local_disk_available_gb: 19319.8
+    internet_down_mbps: 5532.9
+    internet_up_mbps: 862.6
+  exact_hourly_price_usd: 28.26898148148147
   maximum_total_experiment_charge_usd: pending_user_approval
   delete_after_verified_artifact_retrieval: true
 planning_estimates:
@@ -110,11 +139,17 @@ planning_estimates:
   setup_calibration_checkpoint_io_hash_and_transfer_minutes_range: [35, 65]
   result_and_checkpoint_storage_gib_range: [65, 80]
 approval:
-  user_approved: false
-  approved_ceiling_usd: null
+  single_h100_gate:
+    user_approved: true
+    approved_ceiling_usd: 1.00
+    final_invoice_usd: 0.405
+  full_eight_h100_run:
+    user_approved: false
+    approved_ceiling_usd: null
 claims:
-  cuda_value_parity: false
-  fp8_stability: false
+  cuda_value_parity: true
+  single_h100_fp8_finite_gradient_stability: true
+  eight_h100_ddp_fp8_stability: false
   learning_parity: false
   gpt2_core_parity: false
   leaderboard_parity: false
