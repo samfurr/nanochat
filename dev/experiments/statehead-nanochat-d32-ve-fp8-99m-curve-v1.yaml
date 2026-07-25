@@ -130,7 +130,7 @@ infrastructure:
     local_disk_available_gb: 19319.8
     internet_down_mbps: 5532.9
     internet_up_mbps: 862.6
-  exact_hourly_price_usd: 28.26898148148147
+  exact_hourly_price_usd_with_150gb_disk: 28.3361111111111
   maximum_total_experiment_charge_usd: pending_user_approval
   delete_after_verified_artifact_retrieval: true
 planning_estimates:
