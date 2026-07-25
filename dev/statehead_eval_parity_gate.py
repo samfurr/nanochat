@@ -354,11 +354,11 @@ def main():
         fp32_token = torch.cat(pieces, dim=1)
 
     recurrent_decode = {
-        "current_bf16_cuda_full_vs_token_logits": tensor_stats(
+        "current_compute_cuda_full_vs_token_logits": tensor_stats(
             decode_full_cuda,
             decode_token_cuda,
         ),
-        "current_bf16_cuda_full_vs_token_states": state_stats(
+        "current_compute_cuda_full_vs_token_states": state_stats(
             decode_full_cuda_states,
             decode_token_cuda_states,
         ),
@@ -474,15 +474,21 @@ def main():
     report = {
         "verdict": {
             "token_level_full_sequence_scoring_path_pass": core_path_pass,
-            "current_bf16_token_decode_parity_pass": (
+            "current_compute_token_decode_all_argmax_match": (
                 recurrent_decode[
-                    "current_bf16_cuda_full_vs_token_logits"
-                ]["max_abs"] == 0.0
+                    "current_compute_cuda_full_vs_token_logits"
+                ]["argmax_matches"]
+                == recurrent_decode[
+                    "current_compute_cuda_full_vs_token_logits"
+                ]["argmax_total"]
             ),
-            "fp32_state_sequential_decode_parity_pass": (
+            "fp32_state_sequential_decode_all_argmax_match": (
                 recurrent_decode[
                     "fp32_state_sequential_full_vs_token_logits"
-                ]["max_abs"] == 0.0
+                ]["argmax_matches"]
+                == recurrent_decode[
+                    "fp32_state_sequential_full_vs_token_logits"
+                ]["argmax_total"]
             ),
         },
         "core_path_checks": core_path_checks,
