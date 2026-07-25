@@ -1,0 +1,57 @@
+{
+  "seconds_per_step_from_calibration": 1.2104270458221436,
+  "target_training_seconds": 5940,
+  "checkpoint_interval_seconds": 600,
+  "checkpoints": [
+    {
+      "target_training_seconds": 600,
+      "step": 507,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 1200,
+      "step": 1002,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 1800,
+      "step": 1498,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 2400,
+      "step": 1994,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 3000,
+      "step": 2489,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 3600,
+      "step": 2985,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 4200,
+      "step": 3481,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 4800,
+      "step": 3977,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 5400,
+      "step": 4472,
+      "kind": "interval"
+    },
+    {
+      "target_training_seconds": 5940,
+      "step": 4918,
+      "kind": "final"
+    }
+  ]
+}

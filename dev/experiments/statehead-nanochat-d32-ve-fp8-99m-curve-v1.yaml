@@ -1,5 +1,5 @@
 experiment_id: statehead-nanochat-d32-ve-fp8-99m-curve-v1
-status: cuda_gate_passed_awaiting_full_run_approval
+status: completed_verified
 purpose: test_d32_statehead_with_gpt_style_value_embeddings_at_fixed_99_minute_budget
 source_commit: 0e8e426c33d46ef28a4da1362ec5c7a5a181621a
 runner: runs/statehead_d32_ve_fp8_99m_curve.sh
@@ -131,25 +131,82 @@ infrastructure:
     internet_down_mbps: 5532.9
     internet_up_mbps: 862.6
   exact_hourly_price_usd_with_150gb_disk: 28.3361111111111
-  maximum_total_experiment_charge_usd: pending_user_approval
+  instance_id: 45763000
+  maximum_total_experiment_charge_usd: 115.00
+  final_invoice_usd: 98.27
+  post_cleanup_instances: 0
+  post_cleanup_volumes: 0
   delete_after_verified_artifact_retrieval: true
 planning_estimates:
   training_wall_minutes: 100
   ten_full_evaluations_wall_minutes: 43
   setup_calibration_checkpoint_io_hash_and_transfer_minutes_range: [35, 65]
   result_and_checkpoint_storage_gib_range: [65, 80]
+execution:
+  initial_checkout: 1768310482a37d92aca72afeda3f79c63968e37d
+  resumed_checkout: 6d40506d875403e46b287ddf3ee069a1cd4928a9
+  torch: 2.9.1+cu128
+  cuda: "12.8"
+  ddp_fp8_gate:
+    world_size: 8
+    device_batch_size: 8
+    fp8_linear_count: 65
+    gradient_finiteness: passed
+    parameter_checksum_spread: 0.0
+    steady_tokens_per_second_median: 661374.6768923376
+    peak_allocated_bytes: 30685987328
+    peak_reserved_bytes: 31226593280
+  calibration:
+    steps: 125
+    initial_validation_bpb: 3.160622
+    final_validation_bpb: 1.244822
+    seconds_per_step: 1.2104270458221436
+    calibrated_training_steps: 4918
+  full_run:
+    steps: 4918
+    measured_training_seconds: 5992.328063011169
+    measured_training_minutes: 99.8721343835195
+    process_wall_seconds: 6090
+    final_tokens: 5156896768
+    final_train_bpb: 0.804883
+    final_validation_bpb: 0.803146
+    final_core: 0.142582
+    curve:
+      - {minutes: 10.082355562845866, step: 507, val_bpb: 1.001484, core: 0.059933}
+      - {minutes: 20.17015713453293, step: 1002, val_bpb: 0.937683, core: 0.074475}
+      - {minutes: 30.273750591278077, step: 1498, val_bpb: 0.911416, core: 0.088259}
+      - {minutes: 40.37285627524058, step: 1994, val_bpb: 0.89715, core: 0.099069}
+      - {minutes: 50.44765738248825, step: 2489, val_bpb: 0.878349, core: 0.107033}
+      - {minutes: 60.54055301745733, step: 2985, val_bpb: 0.855761, core: 0.114039}
+      - {minutes: 70.63219482898712, step: 3481, val_bpb: 0.837278, core: 0.116155}
+      - {minutes: 80.72366610765457, step: 3977, val_bpb: 0.822519, core: 0.125528}
+      - {minutes: 90.79833664496739, step: 4472, val_bpb: 0.810504, core: 0.13566}
+      - {minutes: 99.8721343835195, step: 4918, val_bpb: 0.803146, core: 0.142582}
+artifacts:
+  local_directory: dev/results/statehead-vast-d32-ve-fp8-99m-curve-20260725
+  post_completion_manifest: post-completion.sha256
+  post_completion_manifest_sha256: 221e4f03618d72679d64c78b074f352d883f7d62757b83e221c224eb9923803c
+  locally_verified_files: 76
+  checkpoint_models: 10
+  checkpoint_model_bytes: 52358796220
+  final_optimizer_shards: 8
+  final_optimizer_bytes: 7789030056
+  final_model_sha256: dd85cc2ae08ef852441c61383c71d8e1b2a7b41ed8c85dcc377f66ee6bc78292
+  curve_json_sha256: c7f1610a90dd358153875839a084e5bd13844935279ce9a8c5533b9e333eface
+  curve_csv_sha256: bb0fff8a4312b8da3f3e103061dc0a44b0b6f46496a1ec1db0b4ae44d8116704
 approval:
   single_h100_gate:
     user_approved: true
     approved_ceiling_usd: 1.00
     final_invoice_usd: 0.405
   full_eight_h100_run:
-    user_approved: false
-    approved_ceiling_usd: null
+    user_approved: true
+    approved_ceiling_usd: 115.00
+    final_invoice_usd: 98.27
 claims:
   cuda_value_parity: true
   single_h100_fp8_finite_gradient_stability: true
-  eight_h100_ddp_fp8_stability: false
+  eight_h100_ddp_fp8_stability: true
   learning_parity: false
   gpt2_core_parity: false
   leaderboard_parity: false

@@ -1,0 +1,14 @@
+StateHead d32 + 16 GPT-style value embeddings, FP8, 99-minute curve
+  model code pin: 0e8e426c33d46ef28a4da1362ec5c7a5a181621a
+  checkout head: 1768310482a37d92aca72afeda3f79c63968e37d
+  depth/width/heads/head_dim: 32/2048/16/128
+  value embedding layers: odd layers 1..31 (16 banks)
+  world/device batch/sequence: 8/8/2048
+  global batch tokens: 1048576
+  precision: tensorwise FP8 projections, BF16 activations, FP32 recurrence
+  CUDA scan chunk size: 32
+  target measured training seconds: 5940
+  checkpoint interval target: 600 seconds
+  base directory: /workspace/nanochat-statehead-d32-ve
+  results directory: /workspace/nanochat-statehead-d32-ve/results
+runs/statehead_d32_ve_fp8_99m_curve.sh: line 203: python: command not found

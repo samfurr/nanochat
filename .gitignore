@@ -11,3 +11,6 @@ eval_bundle/
 # Local setup
 CLAUDE.md
 wandb/
+
+# Large local checkpoint bundles from paid StateHead curve runs
+dev/results/statehead-vast-d32-ve-fp8-99m-curve-*/statehead-*.pt

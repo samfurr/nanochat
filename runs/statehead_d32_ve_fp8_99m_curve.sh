@@ -530,6 +530,7 @@ done
     find . -maxdepth 1 -type f \
         ! -name "${FULL_TAG}.sha256" \
         ! -name "COMPLETED" \
+        ! -name "launcher.log" \
         ! -name "run-exit.txt" \
         -print0 \
         | sort -z \
