@@ -30,6 +30,8 @@ def parse_args():
     parser.add_argument("--metadata", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--fp8-examples", type=int, default=32)
+    parser.add_argument("--implementation-examples", type=int, default=32)
+    parser.add_argument("--skip-fp8", action="store_true")
     return parser.parse_args()
 
 
@@ -134,6 +136,27 @@ def score_stats(actual, expected):
         "predicted_choice_actual": int(actual.argmin().item()),
         "predicted_choice_expected": int(expected.argmin().item()),
         "prediction_matches": bool(actual.argmin() == expected.argmin()),
+    }
+
+
+def score_set_stats(actual_sets, expected_sets):
+    differences = [
+        (actual.float() - expected.float()).abs()
+        for actual, expected in zip(actual_sets, expected_sets)
+    ]
+    return {
+        "examples": len(actual_sets),
+        "candidate_scores": sum(scores.numel() for scores in actual_sets),
+        "prediction_flips": sum(
+            int(actual.argmin() != expected.argmin())
+            for actual, expected in zip(actual_sets, expected_sets)
+        ),
+        "max_abs_mean_loss_difference": max(
+            difference.max().item() for difference in differences
+        ),
+        "mean_abs_mean_loss_difference": sum(
+            difference.mean().item() for difference in differences
+        ) / len(differences),
     }
 
 
@@ -355,43 +378,65 @@ def main():
         decode_full_cuda_states[0].dtype
     )
 
-    # Hypothetical FP8 evaluation versus the BF16 evaluation actually used by CORE.
-    bf16_score_sets = []
+    # Cross-implementation candidate sensitivity over more than one example.
+    generated_count = max(
+        args.implementation_examples,
+        0 if args.skip_fp8 else args.fp8_examples,
+    )
+    production_score_sets = []
     generated_sets = []
-    for example in range(args.fp8_examples):
+    for example in range(generated_count):
         candidate_set = make_candidates(
             20261000 + example,
             model.config.vocab_size,
         )
         generated_sets.append(candidate_set)
-        bf16_score_sets.append(score_batched(model, *candidate_set).cpu())
-    convert_to_float8_training(
-        model,
-        module_filter_fn=is_float8_linear_eligible,
+        production_score_sets.append(
+            score_batched(model, *candidate_set).cpu()
+        )
+    implementation_sets = generated_sets[:args.implementation_examples]
+    production_implementation_scores = (
+        production_score_sets[:args.implementation_examples]
     )
-    fp8_score_sets = [
-        score_batched(model, *candidate_set).cpu()
-        for candidate_set in generated_sets
+    parallel_score_sets = [
+        score_batched(model, *candidate_set, scan_impl="parallel").cpu()
+        for candidate_set in implementation_sets
     ]
-    score_differences = [
-        (fp8.float() - bf16.float()).abs()
-        for fp8, bf16 in zip(fp8_score_sets, bf16_score_sets)
+    sequential_score_sets = [
+        score_batched(model, *candidate_set, scan_impl="sequential").cpu()
+        for candidate_set in implementation_sets
     ]
-    prediction_flips = sum(
-        int(fp8.argmin() != bf16.argmin())
-        for fp8, bf16 in zip(fp8_score_sets, bf16_score_sets)
-    )
-    fp8_vs_bf16 = {
-        "examples": args.fp8_examples,
-        "candidate_scores": args.fp8_examples * 4,
-        "prediction_flips": prediction_flips,
-        "max_abs_mean_loss_difference": max(
-            difference.max().item() for difference in score_differences
+    implementation_sensitivity = {
+        "production_vs_pytorch_parallel": score_set_stats(
+            production_implementation_scores,
+            parallel_score_sets,
         ),
-        "mean_abs_mean_loss_difference": sum(
-            difference.mean().item() for difference in score_differences
-        ) / len(score_differences),
+        "production_vs_sequential": score_set_stats(
+            production_implementation_scores,
+            sequential_score_sets,
+        ),
+        "pytorch_parallel_vs_sequential": score_set_stats(
+            parallel_score_sets,
+            sequential_score_sets,
+        ),
     }
+
+    # Hypothetical FP8 evaluation versus the default evaluation compute dtype.
+    if args.skip_fp8:
+        fp8_vs_default = {"skipped": True}
+    else:
+        convert_to_float8_training(
+            model,
+            module_filter_fn=is_float8_linear_eligible,
+        )
+        fp8_score_sets = [
+            score_batched(model, *candidate_set).cpu()
+            for candidate_set in generated_sets[:args.fp8_examples]
+        ]
+        fp8_vs_default = score_set_stats(
+            fp8_score_sets,
+            production_score_sets[:args.fp8_examples],
+        )
 
     core_path_checks = {
         "candidate_order_prediction_matches": (
@@ -462,8 +507,9 @@ def main():
         },
         "full_sequence": full_sequence,
         "candidate_scoring": candidate_scoring,
+        "implementation_sensitivity": implementation_sensitivity,
         "recurrent_decode": recurrent_decode,
-        "fp8_vs_bf16": fp8_vs_bf16,
+        "fp8_vs_default": fp8_vs_default,
         "elapsed_seconds": time.perf_counter() - started,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
