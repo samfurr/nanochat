@@ -57,6 +57,7 @@ parser.add_argument("--max-seq-len", type=int, default=2048, help="max context l
 parser.add_argument("--window-pattern", type=str, default="SSSL", help="sliding window pattern tiled across layers: L=full, S=half context (e.g. 'SSL')")
 parser.add_argument("--statehead-scan-backend", type=str, default="auto", choices=["auto", "pytorch", "cuda"], help="StateHead scan backend; auto selects native CUDA on CUDA and PyTorch elsewhere")
 parser.add_argument("--statehead-scan-chunk-size", type=int, default=64, help="StateHead scan chunk size (ignored by GPT)")
+parser.add_argument("--statehead-value-embeddings", action="store_true", help="enable GPT-style alternating value embeddings for StateHead")
 # Training horizon (only one used, in order of precedence)
 parser.add_argument("--num-iterations", type=int, default=-1, help="explicit number of optimization steps (-1 = disable)")
 parser.add_argument("--target-flops", type=float, default=-1.0, help="calculate num_iterations to reach target_flops (-1 = disable)")
@@ -80,10 +81,24 @@ parser.add_argument("--core-metric-every", type=int, default=2000, help="evaluat
 parser.add_argument("--core-metric-max-per-task", type=int, default=500, help="examples per task for CORE metric")
 parser.add_argument("--sample-every", type=int, default=2000, help="sample from model every N steps (-1 = disable)")
 parser.add_argument("--save-every", type=int, default=-1, help="save checkpoints every N steps (-1 = only at end)")
+parser.add_argument("--save-steps", type=str, default="", help="comma-separated explicit checkpoint steps in addition to --save-every")
+parser.add_argument("--save-intermediate-optimizer", type=int, choices=[0, 1], default=1, help="save optimizer shards at intermediate checkpoints (final optimizer is always saved)")
 # Output
 parser.add_argument("--model-tag", type=str, default=None, help="override model tag for checkpoint directory name")
 args = parser.parse_args()
 user_config = vars(args).copy()  # for logging
+try:
+    save_steps = {
+        int(value)
+        for value in args.save_steps.split(",")
+        if value.strip()
+    }
+except ValueError as exc:
+    parser.error(f"--save-steps must be comma-separated integers: {exc}")
+if any(step <= 0 for step in save_steps):
+    parser.error("--save-steps values must be positive")
+if args.arch != "statehead" and args.statehead_value_embeddings:
+    parser.error("--statehead-value-embeddings requires --arch=statehead")
 # -----------------------------------------------------------------------------
 # Compute init and wandb logging
 
@@ -171,6 +186,7 @@ def build_model_meta(depth):
                 n_layer=depth, n_head=num_heads, n_embd=model_dim,
                 scan_chunk_size=args.statehead_scan_chunk_size,
                 scan_backend=args.statehead_scan_backend,
+                value_embeddings=args.statehead_value_embeddings,
             )
             model_meta = StateHead(config)
     return model_meta
@@ -519,13 +535,26 @@ while True:
             print0(tokenizer.decode(sample_tokens))
         model.train()
 
-    # save checkpoint: at the end of the run, or every save_every steps, except at the first step or the resume step
-    if last_step or (step > 0 and step != args.resume_from_step and args.save_every > 0 and step % args.save_every == 0):
+    # Save at the end, at a fixed interval, or at explicit calibrated steps.
+    # Defaults preserve the historical final-only model/optimizer behavior.
+    intermediate_checkpoint = (
+        step > 0
+        and step != args.resume_from_step
+        and (
+            (args.save_every > 0 and step % args.save_every == 0)
+            or step in save_steps
+        )
+    )
+    if last_step or intermediate_checkpoint:
         save_checkpoint(
             checkpoint_dir,
             step,
             orig_model.state_dict(), # model parameters
-            optimizer.state_dict(), # optimizer state
+            (
+                optimizer.state_dict()
+                if last_step or args.save_intermediate_optimizer
+                else None
+            ),
             { # metadata saved as json
                 "step": step,
                 "val_bpb": val_bpb, # loss at last step

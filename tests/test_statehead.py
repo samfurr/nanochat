@@ -101,6 +101,64 @@ def test_bank_parameter_and_input_gradient_parity():
         torch.testing.assert_close(actual, expected, rtol=3e-4, atol=3e-5)
 
 
+def test_value_bank_parameter_input_and_embedding_gradient_parity():
+    torch.manual_seed(71)
+    config = StateHeadConfig(
+        sequence_len=17,
+        vocab_size=64,
+        n_layer=1,
+        n_head=2,
+        n_embd=16,
+        scan_chunk_size=8,
+        value_embeddings=True,
+    )
+    bank = StateHeadBank(config, use_value_embedding=True)
+    with torch.no_grad():
+        bank.gate.weight.normal_(std=0.1)
+        bank.out_proj.weight.normal_(std=0.1)
+        bank.ve_gate.weight.normal_(std=0.1)
+        bank.gate_bias.normal_(std=0.1)
+        bank.initial_state.normal_(std=0.1)
+    x_data = torch.randn(2, 17, 16)
+    value_data = torch.randn_like(x_data)
+    output_weight = torch.randn_like(x_data)
+    state_weight = torch.randn(2, 2, 8)
+
+    def grads(scan_impl):
+        x = x_data.clone().requires_grad_()
+        value_embedding = value_data.clone().requires_grad_()
+        y, final_state = bank(
+            x,
+            scan_impl=scan_impl,
+            value_embedding=value_embedding,
+        )
+        loss = (y * output_weight).sum() + (final_state * state_weight).sum()
+        return torch.autograd.grad(
+            loss,
+            (x, value_embedding, *bank.parameters()),
+        )
+
+    sequential_grads = grads("sequential")
+    parallel_grads = grads("parallel")
+    for actual, expected in zip(parallel_grads, sequential_grads):
+        torch.testing.assert_close(actual, expected, rtol=4e-4, atol=4e-5)
+
+
+def test_value_bank_requires_matching_embedding_configuration():
+    config = StateHeadConfig(
+        sequence_len=4,
+        vocab_size=64,
+        n_layer=1,
+        n_head=2,
+        n_embd=16,
+    )
+    x = torch.randn(1, 4, 16)
+    with pytest.raises(ValueError, match="configured with a value embedding"):
+        StateHeadBank(config)(x, value_embedding=torch.randn_like(x))
+    with pytest.raises(ValueError, match="configured with a value embedding"):
+        StateHeadBank(config, use_value_embedding=True)(x)
+
+
 def test_auto_scan_uses_reference_backend_off_cuda():
     torch.manual_seed(8)
     config = StateHeadConfig(
@@ -151,11 +209,43 @@ def test_native_cuda_fake_dispatch_shapes():
     assert activated_gates.dtype == gates.dtype
 
 
-def _raw_gate_scan_reference(gates, initial_state):
+def test_native_cuda_value_fake_dispatch_shapes():
+    from torch._subclasses.fake_tensor import FakeTensorMode
+    from nanochat.statehead_cuda import _statehead_scan_value_forward
+
+    with FakeTensorMode():
+        gates = torch.empty(2, 65, 4, 3, 8, device="cuda", dtype=torch.bfloat16)
+        gate_bias = torch.empty(4, 3, 8, device="cuda", dtype=torch.bfloat16)
+        state = torch.empty(2, 3, 8, device="cuda", dtype=torch.bfloat16)
+        candidate = torch.empty(
+            2, 65, 3, 8, device="cuda", dtype=torch.bfloat16
+        )
+        y, final_state, chunk_initials, activated_gates = (
+            _statehead_scan_value_forward(
+                gates,
+                gate_bias,
+                state,
+                candidate,
+                64,
+            )
+        )
+    assert y.shape == candidate.shape
+    assert y.dtype == torch.bfloat16
+    assert final_state.shape == state.shape
+    assert chunk_initials.shape == (2, 2, 3, 8)
+    assert chunk_initials.dtype == torch.float32
+    assert activated_gates.shape == gates.shape
+    assert activated_gates.dtype == gates.dtype
+
+
+def _raw_gate_scan_reference(gates, initial_state, candidate_residual=None):
     a_logits, b_logits, c_logits, o_logits = gates.unbind(dim=2)
+    candidate = torch.tanh(c_logits)
+    if candidate_residual is not None:
+        candidate = candidate + candidate_residual
     return statehead_scan_sequential(
         torch.sigmoid(a_logits),
-        torch.sigmoid(b_logits) * torch.tanh(c_logits),
+        torch.sigmoid(b_logits) * candidate,
         torch.sigmoid(o_logits),
         initial_state,
     )
@@ -309,6 +399,72 @@ def test_native_cuda_gradient_matches_reference(sequence_len, chunk_size, dtype)
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
+@pytest.mark.parametrize(("sequence_len", "chunk_size"), [(33, 16), (65, 32), (2048, 32)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.bfloat16])
+def test_native_cuda_value_forward_and_gradients_match_reference(
+    sequence_len, chunk_size, dtype
+):
+    from nanochat.statehead_cuda import statehead_scan_cuda
+
+    generator = torch.Generator(device="cuda").manual_seed(7150 + sequence_len)
+    base_gates = torch.randn(
+        2, sequence_len, 4, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
+    base_state = torch.randn(
+        2, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
+    base_candidate = 0.2 * torch.randn(
+        2, sequence_len, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
+    output_weight = torch.randn(
+        2, sequence_len, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
+    state_weight = torch.randn(
+        2, 2, 4, generator=generator, device="cuda", dtype=dtype
+    )
+
+    def run(native):
+        gates = base_gates.detach().clone().requires_grad_()
+        initial_state = base_state.detach().clone().requires_grad_()
+        candidate = base_candidate.detach().clone().requires_grad_()
+        if native:
+            y, final_state = statehead_scan_cuda(
+                gates,
+                initial_state,
+                chunk_size,
+                candidate_residual=candidate,
+            )
+        else:
+            y, final_state = _raw_gate_scan_reference(
+                gates,
+                initial_state,
+                candidate,
+            )
+        loss = (y * output_weight).sum() + (final_state * state_weight).sum()
+        gradients = torch.autograd.grad(
+            loss,
+            (gates, initial_state, candidate),
+        )
+        return y, final_state, gradients
+
+    actual = run(native=True)
+    expected = run(native=False)
+    if dtype == torch.bfloat16:
+        rtol, atol = 3e-2, 3e-2
+    else:
+        rtol, atol = 6e-4, 6e-5
+    torch.testing.assert_close(actual[0], expected[0], rtol=rtol, atol=atol)
+    torch.testing.assert_close(actual[1], expected[1], rtol=rtol, atol=atol)
+    for actual_grad, expected_grad in zip(actual[2], expected[2]):
+        torch.testing.assert_close(
+            actual_grad,
+            expected_grad,
+            rtol=rtol,
+            atol=atol,
+        )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
 def test_native_cuda_scan_compiles_fullgraph():
     from nanochat.statehead_cuda import statehead_scan_cuda
 
@@ -328,7 +484,10 @@ def test_native_cuda_scan_compiles_fullgraph():
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="native scan requires CUDA")
-def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch():
+@pytest.mark.parametrize("value_embeddings", [False, True])
+def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch(
+    value_embeddings,
+):
     from nanochat.statehead_cuda import preload_statehead_cuda
 
     preload_statehead_cuda()
@@ -341,6 +500,7 @@ def test_compiled_native_cuda_full_model_loss_and_gradients_match_pytorch():
         n_embd=32,
         scan_chunk_size=64,
         scan_backend="pytorch",
+        value_embeddings=value_embeddings,
     )
     native_config = copy.deepcopy(reference_config)
     native_config.scan_backend = "cuda"
@@ -457,7 +617,7 @@ def test_batch_independence():
     torch.testing.assert_close(batched_state, expected_state)
 
 
-def make_statehead(n_layer=2):
+def make_statehead(n_layer=2, value_embeddings=False):
     config = StateHeadConfig(
         sequence_len=8,
         vocab_size=64,
@@ -465,6 +625,7 @@ def make_statehead(n_layer=2):
         n_head=4,
         n_embd=32,
         scan_chunk_size=4,
+        value_embeddings=value_embeddings,
     )
     model = StateHead(config)
     model.init_weights()
@@ -509,6 +670,35 @@ def test_prefill_matches_token_by_token_decode_with_smear():
     torch.testing.assert_close(prev_embedding, full_prev)
 
 
+def test_prefill_matches_token_decode_with_value_embeddings():
+    torch.manual_seed(121)
+    model = make_statehead(value_embeddings=True)
+    with torch.no_grad():
+        model.smear_lambda.fill_(0.5)
+        for block in model.transformer.h:
+            block.state_bank.out_proj.weight.normal_(std=0.05)
+    tokens = torch.randint(0, model.config.vocab_size, (2, 8))
+    full_logits, full_states, full_prev = model.forward_with_state(tokens)
+
+    states = None
+    prev_embedding = None
+    logits = []
+    for time in range(tokens.size(1)):
+        step_logits, states, prev_embedding = model.forward_with_state(
+            tokens[:, time:time + 1],
+            states=states,
+            prev_embedding=prev_embedding,
+        )
+        logits.append(step_logits)
+    decode_logits = torch.cat(logits, dim=1)
+    reduced_precision = full_states[0].dtype in (torch.float16, torch.bfloat16)
+    rtol, atol = (2e-2, 2e-2) if reduced_precision else (3e-5, 3e-6)
+    torch.testing.assert_close(decode_logits, full_logits, rtol=rtol, atol=atol)
+    for actual, expected in zip(states, full_states):
+        torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
+    torch.testing.assert_close(prev_embedding, full_prev)
+
+
 class _TokenizerStub:
     def __init__(self, vocab_size):
         self.vocab_size = vocab_size
@@ -519,8 +709,8 @@ class _TokenizerStub:
 
 @pytest.mark.parametrize(
     "model_type",
-    [None, "gpt", "statehead"],
-    ids=["legacy-gpt", "gpt", "statehead"],
+    [None, "gpt", "statehead", "statehead-value"],
+    ids=["legacy-gpt", "gpt", "statehead", "statehead-value"],
 )
 def test_checkpoint_round_trip(tmp_path, monkeypatch, model_type):
     torch.manual_seed(13)
@@ -534,6 +724,7 @@ def test_checkpoint_round_trip(tmp_path, monkeypatch, model_type):
         config = StateHeadConfig(
             sequence_len=8, vocab_size=64, n_layer=1, n_head=4,
             n_embd=32, scan_chunk_size=4,
+            value_embeddings=model_type == "statehead-value",
         )
         model = StateHead(config)
     model.init_weights()
@@ -542,13 +733,18 @@ def test_checkpoint_round_trip(tmp_path, monkeypatch, model_type):
     expected = model(tokens)
     metadata = {"step": 1, "model_config": asdict(config)}
     if model_type is not None:
-        metadata["model_type"] = model_type
+        metadata["model_type"] = (
+            "statehead" if model_type == "statehead-value" else model_type
+        )
     save_checkpoint(tmp_path, 1, model.state_dict(), None, metadata)
     monkeypatch.setattr(checkpoint_manager, "get_tokenizer", lambda: _TokenizerStub(config.vocab_size))
     loaded, _, loaded_metadata = build_model(tmp_path, 1, torch.device("cpu"), phase="eval")
     actual = loaded(tokens)
     torch.testing.assert_close(actual, expected, rtol=0, atol=0)
-    assert loaded_metadata.get("model_type", "gpt") == (model_type or "gpt")
+    expected_model_type = (
+        "statehead" if model_type == "statehead-value" else (model_type or "gpt")
+    )
+    assert loaded_metadata.get("model_type", "gpt") == expected_model_type
 
 
 def test_meta_device_initialization():
@@ -563,6 +759,26 @@ def test_meta_device_initialization():
     model.init_weights()
     assert all(not parameter.is_meta for parameter in model.parameters())
     assert all(torch.isfinite(parameter).all() for parameter in model.parameters())
+
+
+def test_d32_value_embedding_schedule_and_parameter_counts():
+    config = StateHeadConfig(
+        sequence_len=2048,
+        vocab_size=32768,
+        n_layer=32,
+        n_head=16,
+        n_embd=2048,
+        scan_chunk_size=32,
+        value_embeddings=True,
+    )
+    with torch.device("meta"):
+        model = StateHead(config)
+    assert list(model.value_embeds) == [str(layer) for layer in range(1, 32, 2)]
+    counts = model.num_scaling_params()
+    assert counts["value_embeds"] == 1_073_741_824
+    assert counts["statehead_matrices"] == 671_091_712
+    assert counts["transformer_matrices"] + counts["lm_head"] == 738_200_576
+    assert counts["total"] == 1_879_379_034
 
 
 def test_optimizer_partition_is_exact():
@@ -584,6 +800,34 @@ def test_optimizer_partition_is_exact():
         assert id(block.state_bank.out_proj.weight) in muon_ids
 
 
+def test_value_embedding_optimizer_matches_gpt_grouping():
+    model = make_statehead(value_embeddings=True)
+    optimizer = model.setup_optimizer(embedding_lr=0.2)
+    value_ids = {id(parameter) for parameter in model.value_embeds.parameters()}
+    value_groups = [
+        group
+        for group in optimizer.param_groups
+        if {id(parameter) for parameter in group["params"]} == value_ids
+    ]
+    assert len(value_groups) == 1
+    value_group = value_groups[0]
+    assert value_group["kind"] == "adamw"
+    assert value_group["lr"] == pytest.approx(0.2 * (32 / 768) ** -0.5 * 0.5)
+    assert value_group["betas"] == (0.8, 0.995)
+    assert value_group["eps"] == 1e-10
+    assert value_group["weight_decay"] == 0.01
+
+    muon_ids = {
+        id(parameter)
+        for group in optimizer.param_groups
+        if group["kind"] == "muon"
+        for parameter in group["params"]
+    }
+    for block in model.transformer.h:
+        if block.state_bank.ve_gate is not None:
+            assert id(block.state_bank.ve_gate.weight) in muon_ids
+
+
 def test_tiny_batch_overfit():
     torch.manual_seed(14)
     model = make_statehead(n_layer=1)
@@ -601,9 +845,10 @@ def test_tiny_batch_overfit():
     assert losses[-1] < 0.5 * losses[0], f"loss did not substantially decrease: {losses[0]} -> {losses[-1]}"
 
 
-def test_eager_and_compiled_outputs_and_gradients_match():
+@pytest.mark.parametrize("value_embeddings", [False, True])
+def test_eager_and_compiled_outputs_and_gradients_match(value_embeddings):
     torch.manual_seed(15)
-    eager_model = make_statehead()
+    eager_model = make_statehead(value_embeddings=value_embeddings)
     with torch.no_grad():
         eager_model.smear_lambda.fill_(0.4)
         for block in eager_model.transformer.h:

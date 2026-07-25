@@ -20,10 +20,11 @@ __device__ __forceinline__ float sigmoidf(float value) {
   return 1.0f / (1.0f + expf(-value));
 }
 
-template <typename scalar_t>
+template <typename scalar_t, bool kHasCandidateResidual>
 __global__ void statehead_activate_gates_kernel(
     const scalar_t* __restrict__ gates,
     const scalar_t* __restrict__ gate_bias,
+    const scalar_t* __restrict__ candidate_residual,
     scalar_t* __restrict__ activated_gates,
     int64_t total_gate_states,
     int64_t gate_stride) {
@@ -44,10 +45,14 @@ __global__ void statehead_activate_gates_kernel(
       sigmoidf(
           static_cast<float>(gates[gate_base + gate_stride]) +
           static_cast<float>(gate_bias[gate_stride + state])));
-  activated_gates[gate_base + 2 * gate_stride] = static_cast<scalar_t>(
-      tanhf(
-          static_cast<float>(gates[gate_base + 2 * gate_stride]) +
-          static_cast<float>(gate_bias[2 * gate_stride + state])));
+  float candidate = tanhf(
+      static_cast<float>(gates[gate_base + 2 * gate_stride]) +
+      static_cast<float>(gate_bias[2 * gate_stride + state]));
+  if constexpr (kHasCandidateResidual) {
+    candidate += static_cast<float>(candidate_residual[item]);
+  }
+  activated_gates[gate_base + 2 * gate_stride] =
+      static_cast<scalar_t>(candidate);
   activated_gates[gate_base + 3 * gate_stride] = static_cast<scalar_t>(
       sigmoidf(
           static_cast<float>(gates[gate_base + 3 * gate_stride]) +
@@ -261,13 +266,15 @@ __global__ void statehead_backward_chunk_boundary_kernel(
   }
 }
 
-template <typename scalar_t>
+template <typename scalar_t, bool kHasCandidateResidual>
 __global__ void statehead_backward_chunk_grad_kernel(
     const scalar_t* __restrict__ gates,
     const float* __restrict__ chunk_initials,
     const float* __restrict__ chunk_carries,
+    const scalar_t* __restrict__ candidate_residual,
     const scalar_t* __restrict__ grad_output,
     scalar_t* __restrict__ grad_gates,
+    scalar_t* __restrict__ grad_candidate_residual,
     int64_t sequence_len,
     int64_t n_head,
     int64_t head_dim,
@@ -335,8 +342,16 @@ __global__ void statehead_backward_chunk_grad_kernel(
             static_cast<scalar_t>(ds * previous_state * a * (1.0f - a));
         grad_gates[gate_base + n_head * head_dim] =
             static_cast<scalar_t>(ds * c * b * (1.0f - b));
+        float base_candidate = c;
+        if constexpr (kHasCandidateResidual) {
+          base_candidate -=
+              static_cast<float>(candidate_residual[output_index]);
+          grad_candidate_residual[output_index] =
+              static_cast<scalar_t>(ds * b);
+        }
         grad_gates[gate_base + 2 * n_head * head_dim] =
-            static_cast<scalar_t>(ds * b * (1.0f - c * c));
+            static_cast<scalar_t>(
+                ds * b * (1.0f - base_candidate * base_candidate));
         grad_gates[gate_base + 3 * n_head * head_dim] =
             static_cast<scalar_t>(dy * state * o * (1.0f - o));
         carry = ds * a;
@@ -385,14 +400,42 @@ void check_inputs(
       kMaxChunkSize);
 }
 
+void check_candidate_residual(
+    const torch::Tensor& gates,
+    const torch::Tensor& candidate_residual) {
+  TORCH_CHECK(
+      candidate_residual.is_cuda(),
+      "candidate_residual must be a CUDA tensor");
+  TORCH_CHECK(
+      candidate_residual.device() == gates.device(),
+      "candidate_residual device must match gates");
+  TORCH_CHECK(
+      candidate_residual.is_contiguous(),
+      "candidate_residual must be contiguous");
+  TORCH_CHECK(
+      candidate_residual.dim() == 4 &&
+          candidate_residual.size(0) == gates.size(0) &&
+          candidate_residual.size(1) == gates.size(1) &&
+          candidate_residual.size(2) == gates.size(3) &&
+          candidate_residual.size(3) == gates.size(4),
+      "candidate_residual must have shape [B, T, H, Dh]");
+  TORCH_CHECK(
+      candidate_residual.scalar_type() == gates.scalar_type(),
+      "candidate_residual dtype mismatch");
+}
+
 }  // namespace
 
-std::vector<torch::Tensor> statehead_forward_cuda(
+std::vector<torch::Tensor> statehead_forward_cuda_impl(
     torch::Tensor gates,
     torch::Tensor gate_bias,
     torch::Tensor initial_state,
+    const torch::Tensor* candidate_residual,
     int64_t chunk_size) {
   check_inputs(gates, gate_bias, initial_state, chunk_size);
+  if (candidate_residual != nullptr) {
+    check_candidate_residual(gates, *candidate_residual);
+  }
   const c10::cuda::CUDAGuard device_guard(gates.device());
 
   const int64_t batch = gates.size(0);
@@ -429,13 +472,25 @@ std::vector<torch::Tensor> statehead_forward_cuda(
       gates.scalar_type(),
       "statehead_forward_cuda",
       [&] {
-        statehead_activate_gates_kernel<scalar_t>
-            <<<gate_blocks, kForwardThreads, 0, stream>>>(
-                gates.data_ptr<scalar_t>(),
-                gate_bias.data_ptr<scalar_t>(),
-                activated_gates.data_ptr<scalar_t>(),
-                total_gate_states,
-                gate_stride);
+        if (candidate_residual == nullptr) {
+          statehead_activate_gates_kernel<scalar_t, false>
+              <<<gate_blocks, kForwardThreads, 0, stream>>>(
+                  gates.data_ptr<scalar_t>(),
+                  gate_bias.data_ptr<scalar_t>(),
+                  nullptr,
+                  activated_gates.data_ptr<scalar_t>(),
+                  total_gate_states,
+                  gate_stride);
+        } else {
+          statehead_activate_gates_kernel<scalar_t, true>
+              <<<gate_blocks, kForwardThreads, 0, stream>>>(
+                  gates.data_ptr<scalar_t>(),
+                  gate_bias.data_ptr<scalar_t>(),
+                  candidate_residual->data_ptr<scalar_t>(),
+                  activated_gates.data_ptr<scalar_t>(),
+                  total_gate_states,
+                  gate_stride);
+        }
         C10_CUDA_KERNEL_LAUNCH_CHECK();
 
         statehead_chunk_summary_kernel<scalar_t>
@@ -481,9 +536,29 @@ std::vector<torch::Tensor> statehead_forward_cuda(
   return {output, final_state, chunk_initials, activated_gates};
 }
 
-std::vector<torch::Tensor> statehead_backward_cuda(
+std::vector<torch::Tensor> statehead_forward_cuda(
+    torch::Tensor gates,
+    torch::Tensor gate_bias,
+    torch::Tensor initial_state,
+    int64_t chunk_size) {
+  return statehead_forward_cuda_impl(
+      gates, gate_bias, initial_state, nullptr, chunk_size);
+}
+
+std::vector<torch::Tensor> statehead_forward_value_cuda(
+    torch::Tensor gates,
+    torch::Tensor gate_bias,
+    torch::Tensor initial_state,
+    torch::Tensor candidate_residual,
+    int64_t chunk_size) {
+  return statehead_forward_cuda_impl(
+      gates, gate_bias, initial_state, &candidate_residual, chunk_size);
+}
+
+std::vector<torch::Tensor> statehead_backward_cuda_impl(
     torch::Tensor gates,
     torch::Tensor chunk_initials,
+    const torch::Tensor* candidate_residual,
     torch::Tensor grad_y,
     torch::Tensor grad_final_state,
     int64_t chunk_size) {
@@ -496,6 +571,9 @@ std::vector<torch::Tensor> statehead_backward_cuda(
           gates.device() == grad_y.device() &&
           gates.device() == grad_final_state.device(),
       "all tensors must be on the same CUDA device");
+  if (candidate_residual != nullptr) {
+    check_candidate_residual(gates, *candidate_residual);
+  }
   TORCH_CHECK(gates.is_contiguous(), "gates must be contiguous");
   TORCH_CHECK(chunk_initials.is_contiguous(), "chunk_initials must be contiguous");
   TORCH_CHECK(grad_y.is_contiguous(), "grad_y must be contiguous");
@@ -533,6 +611,9 @@ std::vector<torch::Tensor> statehead_backward_cuda(
   const c10::cuda::CUDAGuard device_guard(gates.device());
   auto grad_gates = torch::empty_like(gates);
   auto grad_initial_state = torch::empty_like(grad_final_state);
+  auto grad_candidate_residual = candidate_residual == nullptr
+      ? torch::Tensor()
+      : torch::empty_like(*candidate_residual);
   auto float_options = gates.options().dtype(torch::kFloat);
   auto chunk_a = torch::empty(
       {batch, n_chunks, n_head, head_dim}, float_options);
@@ -581,20 +662,73 @@ std::vector<torch::Tensor> statehead_backward_cuda(
                 n_chunks);
         C10_CUDA_KERNEL_LAUNCH_CHECK();
 
-        statehead_backward_chunk_grad_kernel<scalar_t>
-            <<<chunk_grid, kBackwardThreads, shared_bytes, stream>>>(
-                gates.data_ptr<scalar_t>(),
-                chunk_initials.data_ptr<float>(),
-                chunk_carries.data_ptr<float>(),
-                grad_y.data_ptr<scalar_t>(),
-                grad_gates.data_ptr<scalar_t>(),
-                sequence_len,
-                n_head,
-                head_dim,
-                chunk_size,
-                n_chunks);
+        if (candidate_residual == nullptr) {
+          statehead_backward_chunk_grad_kernel<scalar_t, false>
+              <<<chunk_grid, kBackwardThreads, shared_bytes, stream>>>(
+                  gates.data_ptr<scalar_t>(),
+                  chunk_initials.data_ptr<float>(),
+                  chunk_carries.data_ptr<float>(),
+                  nullptr,
+                  grad_y.data_ptr<scalar_t>(),
+                  grad_gates.data_ptr<scalar_t>(),
+                  nullptr,
+                  sequence_len,
+                  n_head,
+                  head_dim,
+                  chunk_size,
+                  n_chunks);
+        } else {
+          statehead_backward_chunk_grad_kernel<scalar_t, true>
+              <<<chunk_grid, kBackwardThreads, shared_bytes, stream>>>(
+                  gates.data_ptr<scalar_t>(),
+                  chunk_initials.data_ptr<float>(),
+                  chunk_carries.data_ptr<float>(),
+                  candidate_residual->data_ptr<scalar_t>(),
+                  grad_y.data_ptr<scalar_t>(),
+                  grad_gates.data_ptr<scalar_t>(),
+                  grad_candidate_residual.data_ptr<scalar_t>(),
+                  sequence_len,
+                  n_head,
+                  head_dim,
+                  chunk_size,
+                  n_chunks);
+        }
         C10_CUDA_KERNEL_LAUNCH_CHECK();
       });
 
-  return {grad_gates, grad_initial_state};
+  if (candidate_residual == nullptr) {
+    return {grad_gates, grad_initial_state};
+  }
+  return {grad_gates, grad_initial_state, grad_candidate_residual};
+}
+
+std::vector<torch::Tensor> statehead_backward_cuda(
+    torch::Tensor gates,
+    torch::Tensor chunk_initials,
+    torch::Tensor grad_y,
+    torch::Tensor grad_final_state,
+    int64_t chunk_size) {
+  return statehead_backward_cuda_impl(
+      gates,
+      chunk_initials,
+      nullptr,
+      grad_y,
+      grad_final_state,
+      chunk_size);
+}
+
+std::vector<torch::Tensor> statehead_backward_value_cuda(
+    torch::Tensor gates,
+    torch::Tensor chunk_initials,
+    torch::Tensor candidate_residual,
+    torch::Tensor grad_y,
+    torch::Tensor grad_final_state,
+    int64_t chunk_size) {
+  return statehead_backward_cuda_impl(
+      gates,
+      chunk_initials,
+      &candidate_residual,
+      grad_y,
+      grad_final_state,
+      chunk_size);
 }

@@ -54,6 +54,11 @@ def main():
     parser.add_argument("--vocab-size", type=int, default=32768)
     parser.add_argument("--scan-chunk-size", type=int, default=64)
     parser.add_argument("--scan-backend", choices=["pytorch", "cuda"], default="pytorch")
+    parser.add_argument(
+        "--value-embeddings",
+        action="store_true",
+        help="enable GPT-style alternating value embeddings for StateHead",
+    )
     parser.add_argument("--fp8", action="store_true")
     parser.add_argument("--eager", action="store_true", help="disable torch.compile")
     parser.add_argument(
@@ -79,6 +84,8 @@ def main():
         raise ValueError("--warmup-steps must be non-negative and less than --steps")
     if args.arch == "gpt" and args.scan_backend != "pytorch":
         raise ValueError("GPT has no StateHead scan backend; use --scan-backend=pytorch")
+    if args.arch == "gpt" and args.value_embeddings:
+        raise ValueError("--value-embeddings requires --arch=statehead")
 
     ddp, rank, local_rank, world_size, device = compute_init("cuda")
     torch.manual_seed(args.seed)
@@ -104,6 +111,7 @@ def main():
             n_embd=args.model_width,
             scan_chunk_size=args.scan_chunk_size,
             scan_backend=args.scan_backend,
+            value_embeddings=args.value_embeddings,
         )
         model_cls = StateHead
     with torch.device("meta"):

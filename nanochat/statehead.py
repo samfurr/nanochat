@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from nanochat.common import COMPUTE_DTYPE, print0
-from nanochat.gpt import Linear, norm
+from nanochat.gpt import Linear, has_ve, norm
 from nanochat.optim import MuonAdamW
 
 
@@ -22,6 +22,7 @@ class StateHeadConfig:
     scan_backend: str = "auto"
     retention_bias: float = 2.0
     learned_initial_state: bool = True
+    value_embeddings: bool = False
 
     @property
     def head_dim(self):
@@ -125,7 +126,7 @@ def statehead_scan_parallel(a, u, o, initial_state, chunk_size=64):
 
 
 class StateHeadBank(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, use_value_embedding=False):
         super().__init__()
         if config.scan_backend not in ("auto", "pytorch", "cuda"):
             raise ValueError(f"Unknown StateHead scan backend: {config.scan_backend}")
@@ -138,6 +139,9 @@ class StateHeadBank(nn.Module):
         self.gate = Linear(config.n_embd, 4 * config.n_embd, bias=False)
         self.gate_bias = nn.Parameter(torch.zeros(4 * config.n_embd))
         self.out_proj = Linear(config.n_embd, config.n_embd, bias=False)
+        self.ve_gate = (
+            Linear(12, config.n_head, bias=False) if use_value_embedding else None
+        )
         initial_state = torch.zeros(config.n_head, config.head_dim)
         if config.learned_initial_state:
             self.initial_state = nn.Parameter(initial_state)
@@ -149,10 +153,26 @@ class StateHeadBank(nn.Module):
             batch_size, -1, -1
         )
 
-    def forward(self, x, state=None, scan_impl=None):
+    def forward(self, x, state=None, scan_impl=None, value_embedding=None):
         batch_size, sequence_len, n_embd = x.shape
         if state is None:
             state = self.fresh_state(batch_size, x.device, x.dtype)
+        if (value_embedding is None) != (self.ve_gate is None):
+            raise ValueError(
+                "value_embedding must be provided exactly for StateHead banks "
+                "configured with a value embedding"
+            )
+        candidate_residual = None
+        if value_embedding is not None:
+            if value_embedding.shape != x.shape:
+                raise ValueError(
+                    f"value_embedding shape {value_embedding.shape} must match x shape {x.shape}"
+                )
+            value_embedding = value_embedding.view(
+                batch_size, sequence_len, self.n_head, self.head_dim
+            )
+            value_gate = 3 * torch.sigmoid(self.ve_gate(x[..., :12]))
+            candidate_residual = value_gate.unsqueeze(-1) * value_embedding
         gate_logits = self.gate(x)
         if scan_impl is None:
             scan_impl = self.scan_backend
@@ -171,6 +191,7 @@ class StateHeadBank(nn.Module):
                 state,
                 self.chunk_size,
                 gate_bias=self.gate_bias.to(x.dtype),
+                candidate_residual=candidate_residual,
             )
             y = y.reshape(batch_size, sequence_len, n_embd)
             return self.out_proj(y), final_state
@@ -179,7 +200,10 @@ class StateHeadBank(nn.Module):
         gates = gates.view(batch_size, sequence_len, 4, self.n_head, self.head_dim)
         a_logits, b_logits, c_logits, o_logits = gates.unbind(dim=2)
         a = torch.sigmoid(a_logits)
-        u = torch.sigmoid(b_logits) * torch.tanh(c_logits)
+        candidate = torch.tanh(c_logits)
+        if candidate_residual is not None:
+            candidate = candidate + candidate_residual
+        u = torch.sigmoid(b_logits) * candidate
         o = torch.sigmoid(o_logits)
         if scan_impl == "parallel":
             y, final_state = statehead_scan_parallel(a, u, o, state, self.chunk_size)
@@ -192,12 +216,21 @@ class StateHeadBank(nn.Module):
 
 
 class StateHeadBlock(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, layer_idx):
         super().__init__()
-        self.state_bank = StateHeadBank(config)
+        self.state_bank = StateHeadBank(
+            config,
+            use_value_embedding=config.value_embeddings
+            and has_ve(layer_idx, config.n_layer),
+        )
 
-    def forward(self, x, state=None, scan_impl=None):
-        delta, next_state = self.state_bank(norm(x), state, scan_impl=scan_impl)
+    def forward(self, x, state=None, scan_impl=None, value_embedding=None):
+        delta, next_state = self.state_bank(
+            norm(x),
+            state,
+            scan_impl=scan_impl,
+            value_embedding=value_embedding,
+        )
         return x + delta, next_state
 
 
@@ -215,7 +248,10 @@ class StateHead(nn.Module):
             print0(f"Padding vocab_size from {config.vocab_size} to {padded_vocab_size} for efficiency")
         self.transformer = nn.ModuleDict({
             "wte": nn.Embedding(padded_vocab_size, config.n_embd),
-            "h": nn.ModuleList([StateHeadBlock(config) for _ in range(config.n_layer)]),
+            "h": nn.ModuleList([
+                StateHeadBlock(config, layer_idx)
+                for layer_idx in range(config.n_layer)
+            ]),
         })
         self.lm_head = Linear(config.n_embd, padded_vocab_size, bias=False)
         self.resid_lambdas = nn.Parameter(torch.ones(config.n_layer))
@@ -223,6 +259,11 @@ class StateHead(nn.Module):
         self.smear_gate = Linear(24, 1, bias=False)
         self.smear_lambda = nn.Parameter(torch.zeros(1))
         self.backout_lambda = nn.Parameter(0.2 * torch.ones(1))
+        self.value_embeds = nn.ModuleDict({
+            str(layer_idx): nn.Embedding(padded_vocab_size, config.n_embd)
+            for layer_idx in range(config.n_layer)
+            if config.value_embeddings and has_ve(layer_idx, config.n_layer)
+        })
 
     @torch.no_grad()
     def init_weights(self):
@@ -237,6 +278,11 @@ class StateHead(nn.Module):
             torch.nn.init.zeros_(bank.gate_bias)
             bank.gate_bias[:n_embd].fill_(self.config.retention_bias)
             torch.nn.init.zeros_(bank.initial_state)
+            if bank.ve_gate is not None:
+                torch.nn.init.uniform_(bank.ve_gate.weight, 0.0, 0.02)
+
+        for value_embedding in self.value_embeds.values():
+            torch.nn.init.uniform_(value_embedding.weight, -bound, bound)
 
         n_layer = self.config.n_layer
         for i in range(n_layer):
@@ -247,6 +293,8 @@ class StateHead(nn.Module):
         torch.nn.init.uniform_(self.smear_gate.weight, 0.0, 0.02)
         if COMPUTE_DTYPE != torch.float16:
             self.transformer.wte.to(dtype=COMPUTE_DTYPE)
+            for value_embedding in self.value_embeds.values():
+                value_embedding.to(dtype=COMPUTE_DTYPE)
 
     def get_device(self):
         return self.transformer.wte.weight.device
@@ -266,10 +314,14 @@ class StateHead(nn.Module):
 
     def num_scaling_params(self):
         wte = sum(p.numel() for p in self.transformer.wte.parameters())
+        value_embeds = sum(p.numel() for p in self.value_embeds.parameters())
         lm_head = sum(p.numel() for p in self.lm_head.parameters())
         banks = [block.state_bank for block in self.transformer.h]
         statehead_matrices = sum(
-            bank.gate.weight.numel() + bank.out_proj.weight.numel() for bank in banks
+            bank.gate.weight.numel()
+            + bank.out_proj.weight.numel()
+            + (bank.ve_gate.weight.numel() if bank.ve_gate is not None else 0)
+            for bank in banks
         )
         statehead_vectors = sum(
             bank.gate_bias.numel()
@@ -283,10 +335,18 @@ class StateHead(nn.Module):
             + self.smear_lambda.numel()
             + self.backout_lambda.numel()
         )
-        total = wte + lm_head + statehead_matrices + statehead_vectors + scalars
+        total = (
+            wte
+            + value_embeds
+            + lm_head
+            + statehead_matrices
+            + statehead_vectors
+            + scalars
+        )
         assert total == sum(p.numel() for p in self.parameters())
         return {
             "wte": wte,
+            "value_embeds": value_embeds,
             "lm_head": lm_head,
             "statehead_matrices": statehead_matrices,
             "statehead_vectors": statehead_vectors,
@@ -305,16 +365,26 @@ class StateHead(nn.Module):
     ):
         model_dim = self.config.n_embd
         banks = [block.state_bank for block in self.transformer.h]
-        matrix_params = [p for bank in banks for p in (bank.gate.weight, bank.out_proj.weight)]
+        matrix_params = [
+            parameter
+            for bank in banks
+            for parameter in (
+                bank.gate.weight,
+                bank.out_proj.weight,
+                None if bank.ve_gate is None else bank.ve_gate.weight,
+            )
+            if parameter is not None
+        ]
         vector_params = [p for bank in banks for p in (bank.gate_bias, bank.initial_state) if p.requires_grad]
         embedding_params = list(self.transformer.wte.parameters())
+        value_embeds_params = list(self.value_embeds.parameters())
         lm_head_params = list(self.lm_head.parameters())
         resid_params = [self.resid_lambdas]
         x0_params = [self.x0_lambdas]
         smear_params = [self.smear_gate.weight, self.smear_lambda, self.backout_lambda]
         all_groups = (
             matrix_params + vector_params + embedding_params + lm_head_params
-            + resid_params + x0_params + smear_params
+            + value_embeds_params + resid_params + x0_params + smear_params
         )
         trainable = [p for p in self.parameters() if p.requires_grad]
         assert len(all_groups) == len(trainable)
@@ -330,6 +400,15 @@ class StateHead(nn.Module):
             dict(kind="adamw", params=x0_params, lr=scalar_lr, betas=(0.96, 0.95), eps=1e-10, weight_decay=0.0),
             dict(kind="adamw", params=smear_params, lr=0.2, betas=(0.8, 0.95), eps=1e-10, weight_decay=0.0),
         ]
+        if value_embeds_params:
+            param_groups.insert(2, dict(
+                kind="adamw",
+                params=value_embeds_params,
+                lr=embedding_lr * dmodel_lr_scale * 0.5,
+                betas=(0.8, 0.995),
+                eps=1e-10,
+                weight_decay=0.01,
+            ))
         for shape in sorted({p.shape for p in matrix_params}):
             group_params = [p for p in matrix_params if p.shape == shape]
             param_groups.append(dict(
@@ -364,7 +443,17 @@ class StateHead(nn.Module):
         for i, block in enumerate(self.transformer.h):
             x = self.resid_lambdas[i] * x + self.x0_lambdas[i] * x0
             state = None if states is None else states[i]
-            x, next_state = block(x, state, scan_impl=scan_impl)
+            value_embedding = (
+                self.value_embeds[str(i)](idx).to(x.dtype)
+                if str(i) in self.value_embeds
+                else None
+            )
+            x, next_state = block(
+                x,
+                state,
+                scan_impl=scan_impl,
+                value_embedding=value_embedding,
+            )
             next_states.append(next_state)
             if i == backout_layer:
                 x_backout = x
