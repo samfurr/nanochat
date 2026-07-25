@@ -341,7 +341,7 @@ SCHEDULE_OUTPUT="$RESULTS_DIR/checkpoint-schedule.json"
 GATE_META="$GATE_META" \
 GATE_LOG="$GATE_LOG" \
 CALIBRATION_TARGET_SECONDS="$TARGET_TRAINING_SECONDS" \
-CHECKPOINT_INTERVAL_SECONDS="$CHECKPOINT_INTERVAL_SECONDS" \
+CALIBRATION_INTERVAL_SECONDS="$CHECKPOINT_INTERVAL_SECONDS" \
 CALIBRATION_OUTPUT="$CALIBRATION_OUTPUT" \
 SCHEDULE_OUTPUT="$SCHEDULE_OUTPUT" python - <<'PY'
 import json
@@ -377,7 +377,7 @@ if timed_steps <= 0 or not math.isfinite(training_seconds) or training_seconds <
     )
 seconds_per_step = training_seconds / timed_steps
 target_seconds = int(os.environ["CALIBRATION_TARGET_SECONDS"])
-interval_seconds = int(os.environ["CHECKPOINT_INTERVAL_SECONDS"])
+interval_seconds = int(os.environ["CALIBRATION_INTERVAL_SECONDS"])
 training_steps = round(target_seconds / seconds_per_step) + 11
 if not 1000 <= training_steps <= 20000:
     raise SystemExit(
