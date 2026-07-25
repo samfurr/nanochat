@@ -1,0 +1,173 @@
+{
+  "verdict": {
+    "token_level_full_sequence_scoring_path_pass": true,
+    "current_compute_token_decode_all_argmax_match": true,
+    "fp32_state_sequential_decode_all_argmax_match": true
+  },
+  "core_path_checks": {
+    "candidate_order_prediction_matches": true,
+    "batched_vs_individual_prediction_matches": true,
+    "cuda_vs_parallel_prediction_matches": true,
+    "cuda_vs_sequential_prediction_matches": true,
+    "full_cuda_vs_parallel_all_argmax_match": true,
+    "full_cuda_vs_sequential_all_argmax_match": true
+  },
+  "environment": {
+    "platform": "Linux-6.8.0-107-generic-x86_64-with-glibc2.39",
+    "python": "3.10.20",
+    "torch": "2.9.1+cu128",
+    "cuda": "12.8",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "compute_capability": [
+      9,
+      0
+    ],
+    "compute_dtype": "torch.float32",
+    "master_parameter_dtype": "torch.float32",
+    "compile_seconds": 0.6566677140071988,
+    "peak_allocated_bytes": 5604477440,
+    "peak_reserved_bytes": 5756682240
+  },
+  "checkpoint": {
+    "path": "/workspace/statehead-d32-ve-fp8-99m-model_004918.pt",
+    "sha256": "dd85cc2ae08ef852441c61383c71d8e1b2a7b41ed8c85dcc377f66ee6bc78292",
+    "step": 4918,
+    "model_config": {
+      "sequence_len": 2048,
+      "vocab_size": 32768,
+      "n_layer": 32,
+      "n_head": 16,
+      "n_embd": 2048,
+      "scan_chunk_size": 32,
+      "scan_backend": "cuda",
+      "retention_bias": 2.0,
+      "learned_initial_state": true,
+      "value_embeddings": true
+    }
+  },
+  "full_sequence": {
+    "cuda_vs_pytorch_parallel_logits": {
+      "max_abs": 2.9265880584716797e-05,
+      "mean_abs": 3.4254940146638546e-06,
+      "argmax_matches": 130,
+      "argmax_total": 130
+    },
+    "cuda_vs_pytorch_parallel_states": {
+      "max_abs": 2.6702880859375e-05,
+      "mean_abs": 5.48754304219301e-07
+    },
+    "cuda_vs_sequential_logits": {
+      "max_abs": 2.86102294921875e-05,
+      "mean_abs": 3.36390712618595e-06,
+      "argmax_matches": 130,
+      "argmax_total": 130
+    },
+    "cuda_vs_sequential_states": {
+      "max_abs": 3.0517578125e-05,
+      "mean_abs": 5.372157919625309e-07
+    },
+    "pytorch_parallel_vs_sequential_logits": {
+      "max_abs": 3.6716461181640625e-05,
+      "mean_abs": 3.458612354734214e-06,
+      "argmax_matches": 130,
+      "argmax_total": 130
+    },
+    "pytorch_parallel_vs_sequential_states": {
+      "max_abs": 2.6702880859375e-05,
+      "mean_abs": 5.422064115467862e-07
+    }
+  },
+  "candidate_scoring": {
+    "cuda_batched_vs_cuda_individual": {
+      "max_abs": 1.9073486328125e-06,
+      "mean_abs": 1.430511474609375e-06,
+      "predicted_choice_actual": 1,
+      "predicted_choice_expected": 1,
+      "prediction_matches": true
+    },
+    "cuda_batched_vs_pytorch_parallel_individual": {
+      "max_abs": 3.814697265625e-06,
+      "mean_abs": 2.6226043701171875e-06,
+      "predicted_choice_actual": 1,
+      "predicted_choice_expected": 1,
+      "prediction_matches": true
+    },
+    "cuda_batched_vs_sequential_individual": {
+      "max_abs": 1.9073486328125e-06,
+      "mean_abs": 9.5367431640625e-07,
+      "predicted_choice_actual": 1,
+      "predicted_choice_expected": 1,
+      "prediction_matches": true
+    },
+    "candidate_order_invariance": {
+      "max_abs": 0.0,
+      "mean_abs": 0.0,
+      "predicted_choice_actual": 1,
+      "predicted_choice_expected": 1,
+      "prediction_matches": true
+    },
+    "cuda_batched_scores": [
+      14.379329681396484,
+      12.194368362426758,
+      14.139307022094727,
+      15.409470558166504
+    ],
+    "sequential_individual_scores": [
+      14.379329681396484,
+      12.194366455078125,
+      14.139305114746094,
+      15.409470558166504
+    ]
+  },
+  "implementation_sensitivity": {
+    "production_vs_pytorch_parallel": {
+      "examples": 64,
+      "candidate_scores": 256,
+      "prediction_flips": 0,
+      "max_abs_mean_loss_difference": 8.58306884765625e-06,
+      "mean_abs_mean_loss_difference": 1.3299286365509033e-06
+    },
+    "production_vs_sequential": {
+      "examples": 64,
+      "candidate_scores": 256,
+      "prediction_flips": 0,
+      "max_abs_mean_loss_difference": 7.62939453125e-06,
+      "mean_abs_mean_loss_difference": 1.3820827007293701e-06
+    },
+    "pytorch_parallel_vs_sequential": {
+      "examples": 64,
+      "candidate_scores": 256,
+      "prediction_flips": 0,
+      "max_abs_mean_loss_difference": 9.5367431640625e-06,
+      "mean_abs_mean_loss_difference": 1.3932585716247559e-06
+    }
+  },
+  "recurrent_decode": {
+    "current_compute_cuda_full_vs_token_logits": {
+      "max_abs": 3.8623809814453125e-05,
+      "mean_abs": 5.39472239324823e-06,
+      "argmax_matches": 16,
+      "argmax_total": 16
+    },
+    "current_compute_cuda_full_vs_token_states": {
+      "max_abs": 4.4345855712890625e-05,
+      "mean_abs": 8.179586163947761e-07
+    },
+    "fp32_state_sequential_full_vs_token_logits": {
+      "max_abs": 3.814697265625e-05,
+      "mean_abs": 5.7017487051780336e-06,
+      "argmax_matches": 16,
+      "argmax_total": 16
+    },
+    "fp32_state_sequential_full_vs_token_states": {
+      "max_abs": 4.9114227294921875e-05,
+      "mean_abs": 8.13584049907945e-07
+    },
+    "fp32_returned_state_dtype": "torch.float32",
+    "current_cuda_returned_state_dtype": "torch.float32"
+  },
+  "fp8_vs_default": {
+    "skipped": true
+  },
+  "elapsed_seconds": 11.538702646270394
+}
