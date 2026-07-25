@@ -1,0 +1,120 @@
+experiment_id: statehead-nanochat-d32-ve-fp8-99m-curve-v1
+status: prepared_not_launched
+purpose: test_d32_statehead_with_gpt_style_value_embeddings_at_fixed_99_minute_budget
+source_commit: 0e8e426c33d46ef28a4da1362ec5c7a5a181621a
+runner: runs/statehead_d32_ve_fp8_99m_curve.sh
+architecture: statehead
+comparison_references:
+  gpt_d24_run_6:
+    target_core: 0.256525
+    reported_training_minutes: 99
+    scaling_parameters: 729810624
+    total_parameters: 1384122122
+  statehead_d32_without_value_embeddings:
+    core: 0.137938
+    validation_bpb: 0.824316
+    measured_training_seconds: 5970.262143373489
+    scaling_parameters: 738197504
+    total_parameters: 805634138
+model:
+  depth: 32
+  width: 2048
+  state_heads: 16
+  head_dim: 128
+  sequence_length: 2048
+  mlp: none
+  attention: none
+  scan_backend: cuda
+  scan_chunk_size: 32
+  scan_accumulation: float32
+  value_embeddings:
+    enabled: true
+    layer_rule: gpt_has_ve
+    zero_based_layers: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27, 29, 31]
+    bank_count: 16
+    bank_shape: [32768, 2048]
+    parameters: 1073741824
+    injection: post_tanh_recurrent_candidate_before_write_gate
+    gate_input_channels: 12
+    gate_range: [0, 3]
+    optimizer: gpt_value_embedding_adamw_group
+  value_gate_parameters: 3072
+  total_parameters: 1879379034
+  scaling_parameters: 738200576
+precision:
+  master_weights: float32
+  token_and_value_embeddings: bfloat16
+  activations: bfloat16
+  eligible_projection_gemms: tensorwise_fp8
+  expected_fp8_linear_count: 65
+  recurrence: float32
+training:
+  seed: 1337
+  world_size: 8
+  device_batch_size: 8
+  expected_gradient_accumulation_steps: 8
+  total_batch_tokens: 1048576
+  target_measured_training_seconds: 5940
+  iteration_rule: calibrated_from_fresh_125_step_dataset_gate
+  warmup_steps: 40
+  warmdown_ratio: 0.65
+  final_lr_fraction: 0.05
+  checkpoint_schedule:
+    interval_target_seconds: 600
+    interval_targets_minutes: [10, 20, 30, 40, 50, 60, 70, 80, 90]
+    final_target_minutes: 99
+    fixed_before_full_run: true
+    expected_checkpoint_count: 10
+    intermediate_optimizer_state: false
+    final_optimizer_state: true
+evaluation:
+  command: scripts.base_eval
+  every_checkpoint: true
+  suites: [core, bpb]
+  full_core_max_per_task: -1
+  train_split_tokens: 41943040
+  validation_split_tokens: 41943040
+  aggregate_outputs:
+    - statehead-d32-ve-fp8-99m-curve.json
+    - statehead-d32-ve-fp8-99m-curve.csv
+paid_gate:
+  production_shape_ddp_fp8_finite_gradient_steps: 4
+  dataset_calibration_steps: 125
+  dataset_validation_tokens: 4194304
+  continue_requirements:
+    - exact_single_node_8xh100_80gb_hbm3
+    - cuda_extension_compiles
+    - cuda_value_forward_numerical_parity
+    - cuda_value_gradient_parity
+    - compiled_full_model_cuda_parity
+    - all_parameter_gradients_finite_in_ddp_probe
+    - parameter_checksum_spread_zero
+    - safe_peak_memory_at_device_batch_8
+    - dataset_training_loss_finite_and_decreasing
+    - dataset_validation_bpb_finite_and_decreasing
+    - calibrated_steps_between_1000_and_20000
+    - at_least_100_gib_free
+infrastructure:
+  provider: vastai
+  hardware: 8x_NVIDIA_H100_80GB_HBM3_single_node
+  interruptible: false
+  minimum_local_disk_gb: 150
+  termination_guard_hours: 4
+  exact_offer: pending
+  exact_hourly_price_usd: pending
+  maximum_total_experiment_charge_usd: pending_user_approval
+  delete_after_verified_artifact_retrieval: true
+planning_estimates:
+  training_wall_minutes: 100
+  ten_full_evaluations_wall_minutes: 43
+  setup_calibration_checkpoint_io_hash_and_transfer_minutes_range: [35, 65]
+  result_and_checkpoint_storage_gib_range: [65, 80]
+approval:
+  user_approved: false
+  approved_ceiling_usd: null
+claims:
+  cuda_value_parity: false
+  fp8_stability: false
+  learning_parity: false
+  gpt2_core_parity: false
+  leaderboard_parity: false
